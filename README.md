@@ -51,11 +51,11 @@ Now, please run the DAG: `resumatrix_dag.py` from the UI.
 -- src/                     # Source code (Frontend, backend WIP)
 -- data_pipeline/           # Airflow data pipeline directory
     -- dags/                # Airflow DAGs
-    -- data/                # Data
+    -- data/                # Data (managed by dvc, not tracked by git)
     -- logs/                # Logs
     -- res/                 # Git readme meta files (images)
     -- tests/               # Unit tests
-    -- dvc.yaml             # dvc config
+    -- data.dvc             # dvc config
     -- docker-compose.yml   # Entry point
 -- README.md                
 ```
