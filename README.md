@@ -7,6 +7,15 @@ This project is part of the coursework for IE 7374: Machine Learning Operations 
 ## Introduction
 Our resume-job matching pipeline is designed to automate the end-to-end process of extracting, processing, and analyzing job descriptions and resumes. Built using Apache Airflow, our pipeline orchestrates various tasks such as loading data, cleaning, preprocessing using natural language processing (NLP) techniques, and applying machine learning models to determine the suitability of a resume for a given job description.
 
+Contributors: **Team-20** of IE 7374 MLOps Spring 2025 batch
+
+-   Ashish Annappa Magadum
+-   Kishan Sathish Babu 
+-   Nishchith Rao Palimar Raghupathi
+-   Pranay Saggar
+-   Shailendra Tripathi
+
+
 ## Data Pipeline
 
 This section describes the data pipeline built using Apache Airflow, following a structured DAG format. The pipeline is designed to handle the initial phase of the resume-job matching workflow, i.e. uploading of resumes, preprocessing, versioning, and logging. By leveraging tools such as DVC for version control and Airflow for orchestration, this pipeline ensures reproducibility, modularity, and efficient automation of the resume-job matching process. 
