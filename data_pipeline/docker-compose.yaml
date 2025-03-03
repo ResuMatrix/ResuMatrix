@@ -43,6 +43,26 @@ x-airflow-common:
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+
+    # SMTP configurations for email alerts
+    AIRFLOW__SMTP__SMTP_HOST: smtp.gmail.com
+    AIRFLOW__SMTP__SMTP_STARTTLS: 'true'
+    AIRFLOW__SMTP__SMTP_SSL: 'false'
+    AIRFLOW__SMTP__SMTP_USER: 'mlops.team20@gmail.com'
+    AIRFLOW__SMTP__SMTP_PASSWORD: 'mrrb ubti ldnz hrve'
+    # AIRFLOW__SMTP__SMTP_PASSWORD: AIRFLOW_SMTP_PASSWORD
+    AIRFLOW__SMTP__SMTP_PORT: '587'
+    AIRFLOW__SMTP__SMTP_MAIL_FROM: 'mlops.team20@gmail.com'
+
+    # Setting up logging 
+    AIRFLOW__CORE__LOGGING_LEVEL: INFO
+    AIRFLOW__LOGGING__BASE_LOG_FOLDER: '/opt/airflow/logs'
+    AIRFLOW__LOGGING__DAG_PROCESSOR_MANAGER_LOG_LOCATION: '/opt/airflow/logs/dag_processor_manager/dag_processor_manager.log'
+
+    # AIRFLOW__LOGGING__REMOTE_LOGGING: 'true'
+    # AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID: gcs_default
+    # AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER: 'gs://us-east1-mlops-dev-8ad13d78-bucket/airflow-logs/'
+
     # yamllint disable rule:line-length
     # Use simple http server on scheduler for health checks
     # See https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/check-health.html#scheduler-health-check-server
