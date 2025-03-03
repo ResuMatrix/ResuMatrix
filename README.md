@@ -21,7 +21,7 @@ Please clone this repository and setup a python venv with a python runtime 3.12 
 
 Step 2: Docker
 
-Please install docker and docker desktop and run:
+Please install docker, docker desktop and run:
 
 i. `cd data_pipeline`
 
@@ -39,8 +39,8 @@ Now, please run the DAG: `resumatrix_dag.py` from the UI.
 ### Folder structure
 ```
 /                           # Root    
--- src/					    # Source code (Front-end, backend WIP)
--- data_pipeline/			# Airflow data pipeline directory
+-- src/                     # Source code (Frontend, backend WIP)
+-- data_pipeline/           # Airflow data pipeline directory
     -- dags/                # Airflow DAGs
     -- data/                # Data
     -- logs/                # Logs
