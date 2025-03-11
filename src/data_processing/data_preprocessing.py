@@ -2,6 +2,15 @@ import pandas as pd
 import os
 from sklearn.feature_extraction.text import TfidfVectorizer
 import numpy as np
+from sklearn.preprocessing import LabelEncoder
+
+
+def encode_labels(df):
+    le = LabelEncoder()
+    label = le.fit_transform(df['label'])
+    df.drop("label", axis=1, inplace=True)
+    df['label'] = label
+    return df
 
 
 def load_data(data_type="train"):
@@ -13,7 +22,7 @@ def load_data(data_type="train"):
     src_dir = os.path.join(parent_dir, "src")
 
     data_file_path = os.path.join(src_dir, "model_training_data", "resume_job_description_fit", data_type + ".csv")
-    return pd.read_csv(data_file_path)
+    return encode_labels(pd.read_csv(data_file_path))
 
 
 def tf_idf_vectorization(data_df):
