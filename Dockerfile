@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y git
 # Set working directory inside the container
 WORKDIR /app
 
+# Adding logs directory
+RUN mkdir -p /app/logs
+
 # Pull the latest code from GitHub
 RUN git clone -b docker-integration https://github.com/ResuMatrix/ResuMatrix.git .
 
