@@ -1,8 +1,13 @@
 import logging
+import os
 from datetime import datetime
 
+# Ensure logs directory exists
+log_dir = "/app/logs"
+os.makedirs(log_dir, exist_ok=True)
+
 # Setup logging
-log_file = f"logs/log-{datetime.now().strftime('%Y%m%d%H%M%S')}.log"
+log_file = os.path.join(log_dir, f"log-{datetime.now().strftime('%Y%m%d%H%M%S')}.log")
 logging.basicConfig(
     filename=log_file,
     level=logging.INFO,

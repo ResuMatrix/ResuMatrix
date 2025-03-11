@@ -27,4 +27,5 @@ COPY . .
 RUN pip install --no-deps -r requirements.txt
 
 # Ensure that every time the container starts, it pulls the latest code
-CMD git -C /app pull && python src/test_code.py > logs/latest.log 2>&1 && cp logs/latest.log logs/log-$(date +%Y%m%d%H%M%S).log && echo "Execution complete. Shutting down container."
+# CMD git -C /app pull && python src/test_code.py > logs/latest.log 2>&1 && cp logs/latest.log logs/log-$(date +%Y%m%d%H%M%S).log && echo "Execution complete. Shutting down container."
+CMD git -C /app pull && python src/test_code.py && echo "Execution complete. Shutting down container."
