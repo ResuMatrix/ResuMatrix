@@ -20,7 +20,8 @@ WORKDIR /app
 RUN mkdir -p /app/logs
 
 # Pull the latest code from GitHub
-RUN git clone -b docker-integration https://github.com/ResuMatrix/ResuMatrix.git .
+# RUN git clone -b docker-integration https://github.com/ResuMatrix/ResuMatrix.git .
+COPY . .
 
 # Install dependencies from requirements.txt
 RUN pip install --no-deps -r requirements.txt
