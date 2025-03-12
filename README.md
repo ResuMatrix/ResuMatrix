@@ -1,4 +1,3 @@
-Testing!
 # ResuMatrix
 
 ResuMatrix is an Agentic AI-based Resume Analysis and Ranking Application. 
