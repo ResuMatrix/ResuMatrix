@@ -26,10 +26,13 @@ def load_data(data_type="train"):
 
 
 def tf_idf_vectorization(data_df):
-    vectorizer = TfidfVectorizer(max_features=5000, stop_words='english')
+    all_text = pd.concat([data_df['resume_text'], data_df['job_description_text']], axis=0)
 
-    resume_tfidf = vectorizer.fit_transform(data_df['resume_text'])
-    job_tfidf = vectorizer.fit_transform(data_df['job_description_text'])
+    vectorizer = TfidfVectorizer(max_features=5000, stop_words='english')
+    vectorizer.fit(all_text)
+
+    resume_tfidf = vectorizer.transform(data_df['resume_text'])
+    job_tfidf = vectorizer.transform(data_df['job_description_text'])
 
     X = np.hstack((resume_tfidf.toarray(), job_tfidf.toarray()))
     y = data_df['label']
