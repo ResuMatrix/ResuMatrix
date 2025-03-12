@@ -66,7 +66,7 @@ pipeline {
             emailext (
                 subject: "Jenkins Build SUCCESS: Docker Build Successful",
                 body: """
-                    ✅ Build Completed Successfully 
+                    Build Completed Successfully 
                     - **Git Branch:** ${GITHUB_BRANCH}
                     - **Docker Image:** ${DOCKER_IMAGE}
                     - **Logs Path:** ${LOCAL_LOGS}/logs
@@ -82,7 +82,7 @@ pipeline {
             emailext (
                 subject: "Jenkins Build FAILED: Docker Build Failed",
                 body: """
-                    ❌ Build Failed 
+                    Build Failed 
                     - **Git Branch:** ${GITHUB_BRANCH}
                     - **Docker Image:** ${DOCKER_IMAGE}
                     - **Logs Path:** ${LOCAL_LOGS}/logs
