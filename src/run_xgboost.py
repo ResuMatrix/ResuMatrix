@@ -1,5 +1,5 @@
-from src.data_processing.data_preprocessing import load_data, tf_idf_vectorization
-from src.model_training.xgb_classifier import train_xgboost, predict_xgboost
+from data_processing.data_preprocessing import load_data, tf_idf_vectorization
+from model_training.xgb_classifier import train_xgboost, predict_xgboost
 from sklearn.metrics import accuracy_score
 
 
