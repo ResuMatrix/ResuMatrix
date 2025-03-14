@@ -19,7 +19,7 @@ BERT_MODEL = BertModel.from_pretrained('bert-base-uncased').to(DEVICE)
 
 # Ensure necessary NLTK resources are available
 nltk.download('stopwords')
-nltk.download('punkt')
+nltk.download('punkt_tab')
 nltk.download('wordnet')
 
 lemmatizer = WordNetLemmatizer()
@@ -104,17 +104,17 @@ def bert_vectorization(data_df):
     return X, y
 
 
-# def tf_idf_vectorization(data_df):
-#     """Performs TF-IDF vectorization on preprocessed text."""
-#     all_text = pd.concat([data_df['resume_text'], data_df['job_description_text']], axis=0)
+def tf_idf_vectorization(data_df):
+    """Performs TF-IDF vectorization on preprocessed text."""
+    all_text = pd.concat([data_df['resume_text'], data_df['job_description_text']], axis=0)
 
-#     vectorizer = TfidfVectorizer(max_features=5000, stop_words='english', ngram_range=(1, 2))
-#     vectorizer.fit(all_text)
+    vectorizer = TfidfVectorizer(max_features=5000, stop_words='english', ngram_range=(1, 2))
+    vectorizer.fit(all_text)
 
-#     resume_tfidf = vectorizer.transform(data_df['resume_text'])
-#     job_tfidf = vectorizer.transform(data_df['job_description_text'])
+    resume_tfidf = vectorizer.transform(data_df['resume_text'])
+    job_tfidf = vectorizer.transform(data_df['job_description_text'])
 
-#     X = np.hstack((resume_tfidf.toarray(), job_tfidf.toarray()))
-#     y = data_df['label']
+    X = np.hstack((resume_tfidf.toarray(), job_tfidf.toarray()))
+    y = data_df['label']
 
-#     return X, y
+    return X, y
