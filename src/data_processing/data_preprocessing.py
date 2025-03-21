@@ -12,7 +12,6 @@ from nltk.stem import WordNetLemmatizer
 from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_extraction.text import TfidfVectorizer
 from scipy.sparse import hstack
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
 # Ensure necessary NLTK resources are available
 nltk.download('stopwords')
