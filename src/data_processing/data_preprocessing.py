@@ -2,16 +2,14 @@ import pandas as pd
 import os
 import numpy as np
 import re
-import string
 import nltk
-import mlflow
 import torch
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
-from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_extraction.text import TfidfVectorizer
 from scipy.sparse import hstack
+from transformers import BertTokenizer, BertModel
 
 # Ensure necessary NLTK resources are available
 nltk.download('stopwords')
@@ -31,6 +29,10 @@ nltk.download('wordnet')
 
 lemmatizer = WordNetLemmatizer()
 stop_words = set(stopwords.words('english'))
+
+# Load BERT model and tokenizer
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+bert_model = BertModel.from_pretrained('bert-base-uncased')
 
 def clean_text(text):
     """Cleans text by removing special characters, numbers, and stopwords; applies lemmatization."""
@@ -111,3 +113,18 @@ def tf_idf_vectorization(data_df):
     y = data_df['label']
 
     return X, y, vectorizer
+
+def get_bert_embeddings(text):
+    """Generate BERT embeddings for text."""
+    inputs = tokenizer(text, padding=True, truncation=True, return_tensors='pt', max_length=512)
+    with torch.no_grad():
+        outputs = bert_model(**inputs)
+    return outputs.last_hidden_state[:, 0, :].numpy().flatten()
+
+def extract_embeddings(df):
+    """Generate embeddings for resumes and job descriptions."""
+    df['resume_embeddings'] = df['resume_text'].apply(get_bert_embeddings)
+    df['job_embeddings'] = df['job_description_text'].apply(get_bert_embeddings)
+    X = np.array([np.concatenate([r, j]) for r, j in zip(df['resume_embeddings'], df['job_embeddings'])])
+    y = df['label'].values
+    return X, y
