@@ -2,6 +2,7 @@ from model_training.similarity_with_xgboost import train_xgboost_model, predict_
 from data_processing.data_preprocessing import load_data, extract_embeddings
 import pickle
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+import os
 
 mlflow.set_tracking_uri("http://localhost:5000")
 
@@ -27,5 +28,5 @@ def execute_similarity_with_xgboost():
 if __name__ == "__main__":
     xgboost_model_with_similarity = execute_similarity_with_xgboost()
 
-filename = 'xgboost_model_with_similarity.pkl'
+filename = os.path.join('src', 'saved_models', 'xgboost_model_with_similarity.pkl')
 pickle.dump(xgboost_model_with_similarity, open(filename, 'wb'))

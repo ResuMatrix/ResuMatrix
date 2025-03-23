@@ -3,6 +3,7 @@ from data_processing.data_preprocessing import load_data, tf_idf_vectorization
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import pickle
 import mlflow
+import os
 
 mlflow.set_tracking_uri("http://localhost:5000")
 
@@ -32,5 +33,5 @@ def execute_cosine_similarity():
 if __name__ == '__main__':
     model = execute_cosine_similarity()
 
-filename = 'cosine_similarity_model.pkl'
+filename = os.path.join('src', 'saved_models', 'cosine_similarity_model.pkl')
 pickle.dump(model, open(filename, 'wb'))

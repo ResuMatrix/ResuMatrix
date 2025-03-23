@@ -1,5 +1,6 @@
 import pickle
 import mlflow
+import os
 
 from model_training.knn_classifier import train_knn, predict_knn
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
@@ -31,5 +32,5 @@ def execute_knn():
 if __name__ == '__main__':
     knn_model = execute_knn()
 
-filename = 'knn_classifier.pkl'
+filename = os.path.join('src', 'saved_models', 'knn_classifier.pkl')
 pickle.dump(knn_model, open(filename, 'wb'))

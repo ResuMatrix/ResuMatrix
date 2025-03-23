@@ -3,6 +3,7 @@ from data_processing.data_preprocessing import load_data, tf_idf_vectorization
 from model_training.random_forest_classifier import train_random_forest
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import mlflow
+import os
 
 mlflow.set_tracking_uri("http://localhost:5000")
 
@@ -30,5 +31,5 @@ def execute_random_forest():
 if __name__ == '__main__':
     model = execute_random_forest()
 
-filename = 'random_forest_model.pkl'
+filename = os.path.join('src', 'saved_models', 'random_forest_model.pkl')
 pickle.dump(model, open(filename, 'wb'))
