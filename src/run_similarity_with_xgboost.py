@@ -4,8 +4,6 @@ import pickle
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import os
 
-mlflow.set_tracking_uri("http://localhost:5000")
-
 def execute_similarity_with_xgboost():
     # Load and preprocess data
     train_df = load_data("train")

@@ -6,6 +6,9 @@ import mlflow
 def train_random_forest(X_train, y_train, X_test, y_test):
     """Trains a Random Forest model with hyperparameter tuning and logs it with MLflow."""
     with mlflow.start_run():
+
+        mlflow.set_experiment("Random Forest Classifier")
+
         # Define hyperparameters for tuning
         param_grid = {
             'n_estimators': [100, 200, 300],  # Number of trees in the forest
@@ -38,11 +41,10 @@ def train_random_forest(X_train, y_train, X_test, y_test):
 
         # Log classification report
         class_report = classification_report(y_test, y_pred)
-        mlflow.log_text(class_report, "classification_report.txt")
+        mlflow.log_metrics({"classification_report": class_report})
 
-        # Log confusion matrix
         conf_matrix = confusion_matrix(y_test, y_pred)
-        mlflow.log_text(str(conf_matrix), "confusion_matrix.txt")
+        mlflow.log_metrics({"confusion_matrix": conf_matrix})
 
         # Save the model
         mlflow.sklearn.log_model(best_model, "random_forest_model")

@@ -6,8 +6,6 @@ from model_training.knn_classifier import train_knn, predict_knn
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from data_processing.data_preprocessing import load_data, tf_idf_vectorization
 
-mlflow.set_tracking_uri("http://localhost:5000")
-
 def execute_knn():
 
     # Load and preprocess training data

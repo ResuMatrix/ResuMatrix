@@ -5,8 +5,6 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 import mlflow
 import os
 
-mlflow.set_tracking_uri("http://localhost:5000")
-
 def execute_random_forest():
 
     # Load and preprocess training data

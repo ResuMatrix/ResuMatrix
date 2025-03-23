@@ -5,8 +5,6 @@ import pickle
 import mlflow
 import os
 
-mlflow.set_tracking_uri("http://localhost:5000")
-
 def execute_cosine_similarity():
 
     # Load and preprocess training data

@@ -14,6 +14,9 @@ def calculate_cosine_similarity(resume_embeddings, job_embeddings):
 def train_cosine_similarity_model(X_train, y_train, X_test, y_test):
     """Trains a model using cosine similarity scores and logs it with MLflow."""
     with mlflow.start_run():
+
+        mlflow.set_experiment("Cosine Similarity Model")
+
         # Calculate cosine similarity scores
         train_similarity = calculate_cosine_similarity(X_train[:, :X_train.shape[1]//2], X_train[:, X_train.shape[1]//2:])
         test_similarity = calculate_cosine_similarity(X_test[:, :X_test.shape[1]//2], X_test[:, X_test.shape[1]//2:])
@@ -36,10 +39,10 @@ def train_cosine_similarity_model(X_train, y_train, X_test, y_test):
 
         # Log classification report
         class_report = classification_report(y_test, y_pred)
-        mlflow.log_text(class_report, "classification_report.txt")
+        mlflow.log_metrics({"classification_report": class_report})
 
         conf_matrix = confusion_matrix(y_test, y_pred)
-        mlflow.log_text(str(conf_matrix), "confusion_matrix.txt")
+        mlflow.log_metrics({"confusion_matrix": conf_matrix})
 
         # Save the model
         mlflow.sklearn.log_model(model, "cosine_similarity_model")
