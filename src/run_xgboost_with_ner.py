@@ -1,4 +1,4 @@
-from data_processing.data_preprocessing import load_data
+from data_processing.data_preprocessing import load_data, lambda_and_cosine_similarity
 import pickle
 from model_training.xgboost_with_ner import extract_entity_overlap, compute_entity_overlap, extract_features, train_xgboost_model, predict_xgboost_with_ner
 import os
@@ -8,6 +8,9 @@ def execute_xgboost_with_ner():
     # Load and preprocess data
     train_df = load_data("train")
     test_df = load_data("test")
+
+    train_df = lambda_and_cosine_similarity(train_df)
+    test_df = lambda_and_cosine_similarity(test_df)
 
     # Compute entity overlap
     train_df = extract_entity_overlap(train_df)

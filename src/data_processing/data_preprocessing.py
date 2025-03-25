@@ -71,6 +71,8 @@ def encode_labels(df):
     """Encodes labels and removes rows with 'potential fit' label."""
     # Directly remove rows where label is 'Potential Fit'
     df = df[df["label"] != "Potential Fit"]
+    # Map labels to numerical values (Good Fit: 1, No Fit: 0)
+    df['label'] = df['label'].map({"Good Fit": 1, "No Fit": 0})
     return df
 
 
@@ -187,8 +189,6 @@ def lambda_and_cosine_similarity(df):
     df["jd_readability"] = df["job_description_text"].apply(lambda x: flesch_reading_ease(x))
 
     return df
-
-
 
 # def extract_embeddings(df):
 #     """Generate embeddings for resumes and job descriptions."""
