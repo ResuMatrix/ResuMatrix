@@ -10,6 +10,10 @@ from nltk.stem import WordNetLemmatizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from scipy.sparse import hstack
 from transformers import BertTokenizer, BertModel
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics import jaccard_score
+from textstat import flesch_reading_ease
 
 # Ensure necessary NLTK resources are available
 nltk.download('stopwords')
@@ -19,8 +23,8 @@ nltk.download('wordnet')
 lemmatizer = WordNetLemmatizer()
 stop_words = set(stopwords.words('english'))
 
-# Load BERT tokenizer and model
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+print(DEVICE)
 
 # Ensure necessary NLTK resources are available
 nltk.download('stopwords')
@@ -31,8 +35,16 @@ lemmatizer = WordNetLemmatizer()
 stop_words = set(stopwords.words('english'))
 
 # Load BERT model and tokenizer
+# tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+# bert_model = BertModel.from_pretrained('bert-base-uncased')
+
+# Load BERT tokenizer and model
+model_id = "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
+# Load BERT tokenizer and model
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-bert_model = BertModel.from_pretrained('bert-base-uncased')
+model = BertModel.from_pretrained('bert-base-uncased').to(DEVICE)
+vectorizer = TfidfVectorizer(stop_words="english")
+
 
 def clean_text(text):
     """Cleans text by removing special characters, numbers, and stopwords; applies lemmatization."""
@@ -47,34 +59,42 @@ def clean_text(text):
     tokens = [lemmatizer.lemmatize(word) for word in tokens if word not in stop_words]  # Lemmatization & Stopword Removal
     return " ".join(tokens)
 
+# def encode_labels(df):
+#     """Encodes labels and removes rows with 'potential fit' label."""
+#     # Directly remove rows where label is 'Potential Fit'
+#     df.drop(df[df['label'] == "Potential Fit"].index, inplace=True)
+#     # Map labels to numerical values (Good Fit: 1, No Fit: 0)
+#     df['label'] = df['label'].map({"Good Fit": 1, "No Fit": 0})
+#     return df
+
 def encode_labels(df):
     """Encodes labels and removes rows with 'potential fit' label."""
     # Directly remove rows where label is 'Potential Fit'
-    df.drop(df[df['label'] == "Potential Fit"].index, inplace=True)
-    # Map labels to numerical values (Good Fit: 1, No Fit: 0)
-    df['label'] = df['label'].map({"Good Fit": 1, "No Fit": 0})
+    df = df[df["label"] != "Potential Fit"]
     return df
 
-def load_data(data_type="train"):
-    current_file_path = os.path.abspath(__file__)
-    if data_type not in ["train", "test"]:
-        raise ValueError("Expecting data_type to be train or test.")
 
-    parent_dir = current_file_path[:current_file_path.index("ResuMatrix") + 10]
-    src_dir = os.path.join(parent_dir, "src")
+# def load_data(data_type="train"):
+#     """Loads dataset, encodes labels, and applies text preprocessing."""
+#     current_file_path = os.path.abspath(__file__)
+#     if data_type not in ["train", "test"]:
+#         raise ValueError("Expecting data_type to be train or test.")
 
-    data_file_path = os.path.join(src_dir, "model_training_data", "resume_job_description_fit", data_type + ".csv")
+#     parent_dir = current_file_path[:current_file_path.index("ResuMatrix") + 10]
+#     src_dir = os.path.join(parent_dir, "src")
 
-    df = pd.read_csv(data_file_path)
-    df = encode_labels(df)
-    df.drop_duplicates(inplace=True)
-    df.dropna(subset=["resume_text", "job_description_text"], inplace=True)
+#     data_file_path = os.path.join(src_dir, "model_training_data", "resume_job_description_fit", data_type + ".csv")
 
-    # Apply text cleaning to resume_text and job_description_text
-    df['resume_text'] = df['resume_text'].apply(clean_text)
-    df['job_description_text'] = df['job_description_text'].apply(clean_text)
+#     df = pd.read_csv(data_file_path)
+#     df = encode_labels(df)
+#     df.drop_duplicates(inplace=True)
+#     df.dropna(subset=["resume_text", "job_description_text"], inplace=True)
 
-    return df
+#     # Apply text cleaning
+#     df['resume_text'] = df['resume_text'].apply(clean_text)
+#     df['job_description_text'] = df['job_description_text'].apply(clean_text)
+
+#     return df
 
 def load_data(data_type="train"):
     """Loads dataset, encodes labels, and applies text preprocessing."""
@@ -88,9 +108,9 @@ def load_data(data_type="train"):
     data_file_path = os.path.join(src_dir, "model_training_data", "resume_job_description_fit", data_type + ".csv")
 
     df = pd.read_csv(data_file_path)
+    # df.drop_duplicates(inplace=True)
+    df.dropna(subset=["resume_text", "job_description_text", "label"], inplace=True)
     df = encode_labels(df)
-    df.drop_duplicates(inplace=True)
-    df.dropna(subset=["resume_text", "job_description_text"], inplace=True)
 
     # Apply text cleaning
     df['resume_text'] = df['resume_text'].apply(clean_text)
@@ -114,17 +134,66 @@ def tf_idf_vectorization(data_df):
 
     return X, y, vectorizer
 
-def get_bert_embeddings(text):
-    """Generate BERT embeddings for text."""
-    inputs = tokenizer(text, padding=True, truncation=True, return_tensors='pt', max_length=512)
+# def get_bert_embeddings(text):
+#     """Generate BERT embeddings for text."""
+#     inputs = tokenizer(text, padding=True, truncation=True, return_tensors='pt', max_length=512)
+#     with torch.no_grad():
+#         outputs = bert_model(**inputs)
+#     return outputs.last_hidden_state[:, 0, :].numpy().flatten()
+
+def get_embeddings(text):
+    """Generate BERT embeddings for a given text."""
+    inputs = tokenizer(text, padding=True, truncation=True, return_tensors='pt', max_length=512).to(DEVICE)
     with torch.no_grad():
-        outputs = bert_model(**inputs)
-    return outputs.last_hidden_state[:, 0, :].numpy().flatten()
+        outputs = model(**inputs)
+    return outputs.last_hidden_state[:, 0, :].cpu().numpy().flatten()  # Get CLS token embedding
 
 def extract_embeddings(df):
     """Generate embeddings for resumes and job descriptions."""
-    df['resume_embeddings'] = df['resume_text'].apply(get_bert_embeddings)
-    df['job_embeddings'] = df['job_description_text'].apply(get_bert_embeddings)
-    X = np.array([np.concatenate([r, j]) for r, j in zip(df['resume_embeddings'], df['job_embeddings'])])
-    y = df['label'].values
-    return X, y
+    resume_embeddings = np.array([get_embeddings(text) for text in df["resume_text"]])
+    jd_embeddings = np.array([get_embeddings(text) for text in df["job_description_text"]])
+
+    # Compute cosine similarity between resume and job description embeddings
+    cosine_similarities = [cosine_similarity([r], [j])[0][0] for r, j in zip(resume_embeddings, jd_embeddings)]
+    # Convert to NumPy array
+    cosine_similarities = np.array(cosine_similarities).reshape(-1, 1)
+    return cosine_similarities
+
+
+def compute_jaccard_similarity(text1, text2):
+    vectorizer = CountVectorizer(ngram_range=(2, 3), stop_words="english", binary=True)
+    X = vectorizer.fit_transform([text1, text2])
+    return jaccard_score(X.toarray()[0], X.toarray()[1])
+
+def lambda_and_cosine_similarity(df):
+
+    """Compute Jaccard similarity and cosine similarity between resumes and job descriptions."""
+    df["jaccard_similarity"] = df.apply(lambda row: compute_jaccard_similarity(row["resume_text"], row["job_description_text"]), axis=1)
+    tfidf_matrix = vectorizer.fit_transform(df["resume_text"].tolist() + df["job_description_text"].tolist())
+
+    # Split the TF-IDF matrix into resume and job description parts
+    resume_tfidf = tfidf_matrix[:len(df)]
+    jd_tfidf = tfidf_matrix[len(df):]
+
+    # Compute cosine similarity between resume and job description TF-IDF vectors
+    df["tfidf_cosine_similarity"] = [cosine_similarity(resume_tfidf[i], jd_tfidf[i])[0][0] for i in range(len(df))]
+
+    # Calculate length of resumes and job descriptions
+    df["resume_length"] = df["resume_text"].apply(lambda x: len(x.split()))
+    df["jd_length"] = df["job_description_text"].apply(lambda x: len(x.split()))
+
+    # Calculate readability scores
+    df["resume_readability"] = df["resume_text"].apply(lambda x: flesch_reading_ease(x))
+    df["jd_readability"] = df["job_description_text"].apply(lambda x: flesch_reading_ease(x))
+
+    return df
+
+
+
+# def extract_embeddings(df):
+#     """Generate embeddings for resumes and job descriptions."""
+#     df['resume_embeddings'] = df['resume_text'].apply(get_bert_embeddings)
+#     df['job_embeddings'] = df['job_description_text'].apply(get_bert_embeddings)
+#     X = np.array([np.concatenate([r, j]) for r, j in zip(df['resume_embeddings'], df['job_embeddings'])])
+#     y = df['label'].values
+#     return X, y

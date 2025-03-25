@@ -152,3 +152,6 @@ gunicorn==23.0.0
 tqdm==4.67.1
 regex==2024.9.11
 imblearn==0.0
+textstat==0.7.5
+spacy==3.8.4
+en_core_web_sm==3.8.0
