@@ -1,5 +1,4 @@
 import pandas as pd
-import os
 import numpy as np
 import re
 import nltk
@@ -34,12 +33,7 @@ nltk.download('wordnet')
 lemmatizer = WordNetLemmatizer()
 stop_words = set(stopwords.words('english'))
 
-# Load BERT model and tokenizer
-# tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-# bert_model = BertModel.from_pretrained('bert-base-uncased')
-
-# Load BERT tokenizer and model
-model_id = "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
+# model_id = "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
 # Load BERT tokenizer and model
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 model = BertModel.from_pretrained('bert-base-uncased').to(DEVICE)
@@ -48,24 +42,16 @@ vectorizer = TfidfVectorizer(stop_words="english")
 
 def clean_text(text):
     """Cleans text by removing special characters, numbers, and stopwords; applies lemmatization."""
-    text = re.sub('http\S+\s*', ' ', text)  # remove URLs
-    text = re.sub('RT|cc', ' ', text)  # remove RT and cc
-    text = re.sub('#\S+', '', text)  # remove hashtags
-    text = re.sub('@\S+', '  ', text)  # remove mentions
-    text = re.sub('[%s]' % re.escape("""!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"""), ' ', text)  # remove punctuations
+    text = re.sub(r'http\S+\s*', ' ', text)  # remove URLs
+    text = re.sub(r'RT|cc', ' ', text)  # remove RT and cc
+    text = re.sub(r'#\S+', '', text)  # remove hashtags
+    text = re.sub(r'@\S+', '  ', text)  # remove mentions
+    text = re.sub(r'[%s]' % re.escape(r"""!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"""), ' ', text)  # remove punctuations
     text = re.sub(r'[^\x00-\x7f]',r' ', text)
-    text = re.sub('\s+', ' ', text)  # remove extra whitespace
+    text = re.sub(r'\s+', ' ', text)  # remove extra whitespace
     tokens = word_tokenize(text.lower())  # Tokenization and lowercasing
     tokens = [lemmatizer.lemmatize(word) for word in tokens if word not in stop_words]  # Lemmatization & Stopword Removal
     return " ".join(tokens)
-
-# def encode_labels(df):
-#     """Encodes labels and removes rows with 'potential fit' label."""
-#     # Directly remove rows where label is 'Potential Fit'
-#     df.drop(df[df['label'] == "Potential Fit"].index, inplace=True)
-#     # Map labels to numerical values (Good Fit: 1, No Fit: 0)
-#     df['label'] = df['label'].map({"Good Fit": 1, "No Fit": 0})
-#     return df
 
 def encode_labels(df):
     """Encodes labels and removes rows with 'potential fit' label."""
@@ -76,40 +62,9 @@ def encode_labels(df):
     return df
 
 
-# def load_data(data_type="train"):
-#     """Loads dataset, encodes labels, and applies text preprocessing."""
-#     current_file_path = os.path.abspath(__file__)
-#     if data_type not in ["train", "test"]:
-#         raise ValueError("Expecting data_type to be train or test.")
-
-#     parent_dir = current_file_path[:current_file_path.index("ResuMatrix") + 10]
-#     src_dir = os.path.join(parent_dir, "src")
-
-#     data_file_path = os.path.join(src_dir, "model_training_data", "resume_job_description_fit", data_type + ".csv")
-
-#     df = pd.read_csv(data_file_path)
-#     df = encode_labels(df)
-#     df.drop_duplicates(inplace=True)
-#     df.dropna(subset=["resume_text", "job_description_text"], inplace=True)
-
-#     # Apply text cleaning
-#     df['resume_text'] = df['resume_text'].apply(clean_text)
-#     df['job_description_text'] = df['job_description_text'].apply(clean_text)
-
-#     return df
-
 def load_data(data_type="train"):
     """Loads dataset, encodes labels, and applies text preprocessing."""
-    current_file_path = os.path.abspath(__file__)
-    if data_type not in ["train", "test"]:
-        raise ValueError("Expecting data_type to be train or test.")
-
-    parent_dir = current_file_path[:current_file_path.index("ResuMatrix") + 10]
-    src_dir = os.path.join(parent_dir, "src")
-
-    data_file_path = os.path.join(src_dir, "model_training_data", "resume_job_description_fit", data_type + ".csv")
-
-    df = pd.read_csv(data_file_path)
+    df = pd.read_csv("hf://datasets/cnamuangtoun/resume-job-description-fit/train.csv")
     # df.drop_duplicates(inplace=True)
     df.dropna(subset=["resume_text", "job_description_text", "label"], inplace=True)
     df = encode_labels(df)
@@ -135,13 +90,6 @@ def tf_idf_vectorization(data_df):
     y = data_df['label']
 
     return X, y, vectorizer
-
-# def get_bert_embeddings(text):
-#     """Generate BERT embeddings for text."""
-#     inputs = tokenizer(text, padding=True, truncation=True, return_tensors='pt', max_length=512)
-#     with torch.no_grad():
-#         outputs = bert_model(**inputs)
-#     return outputs.last_hidden_state[:, 0, :].numpy().flatten()
 
 def get_embeddings(text):
     """Generate BERT embeddings for a given text."""
@@ -190,10 +138,4 @@ def lambda_and_cosine_similarity(df):
 
     return df
 
-# def extract_embeddings(df):
-#     """Generate embeddings for resumes and job descriptions."""
-#     df['resume_embeddings'] = df['resume_text'].apply(get_bert_embeddings)
-#     df['job_embeddings'] = df['job_description_text'].apply(get_bert_embeddings)
-#     X = np.array([np.concatenate([r, j]) for r, j in zip(df['resume_embeddings'], df['job_embeddings'])])
-#     y = df['label'].values
-#     return X, y
+
