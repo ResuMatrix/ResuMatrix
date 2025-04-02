@@ -155,3 +155,9 @@ imblearn==0.0
 textstat==0.7.5
 spacy==3.8.4
 en_core_web_sm==3.8.0
+streamlit==1.40.1
+bcrypt==3.2.0
+pymongo==4.11.3
+PyPDF2==3.0.1
+python-docx==1.1.2
+docx==0.2.4
