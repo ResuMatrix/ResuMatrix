@@ -130,7 +130,12 @@ To optimize the pipeline flow and improve efficiency, Apache Airflow’s Gantt c
 
 
 ### Testing
+To run tests:
+
+`pytest data_pipeline/tests/tests.py`
+
 To optimize the pipeline flow and improve efficiency, Apache Airflow’s Gantt chart is leveraged for visualizing task execution timelines and resource allocation. By using this feature, the pipeline is designed to enable parallel execution of tasks wherever possible, reducing overall runtime and improving resource utilization. The Gantt chart provides a clear view of task dependencies, start and end times, and resource usage, allowing for better scheduling and management of resources. This visualization helps identify bottlenecks and areas for potential parallelization, ensuring that computational resources are allocated efficiently and that tasks are executed in the most optimal order. Additionally, parallelization improves the speed of data processing, making the pipeline more scalable and responsive to changing workloads.
+
 
 
 
