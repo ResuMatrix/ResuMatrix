@@ -9,6 +9,7 @@ import time
 st.set_page_config(page_title="ResuMatrix", page_icon=":briefcase:", layout="wide")
 st.title("Welcome to :green[ResuMatrix] :books:")
 
+# HTML CSS for styling
 st.markdown("""
     <style>
         .stButton > button {
@@ -34,7 +35,6 @@ st.markdown("""
         }
     </style>
 """, unsafe_allow_html=True)
-
 
 
 if "username" not in st.session_state:
