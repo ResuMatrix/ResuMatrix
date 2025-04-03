@@ -1,0 +1,5 @@
+google-genai
+PyMuPDF
+python-magic
+mammoth
+pydantic
