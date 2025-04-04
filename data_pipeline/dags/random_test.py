@@ -16,6 +16,14 @@ def load_resumes(source_dir):
             The JSON file of the private key will be downloaded to your local.
         Set an environment variable to point to the key file:
             export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your-service-account-key.json"
+        Have Google Cloud CLI installed. Enter the command "gcloud init".
+            Re-initialize configuration. Option 1.
+            Choose your account that is associated with the GCP project.
+            Pick our cloud project to use, namely, awesome-nimbus.
+            Do not configure region and zone.
+        Run the command "gcloud auth application-default login".
+            This opens a new tab in your browser. Allow permissions for the account you had selected initially.
+            Credentials will be set and this python function should run.
     """
     storage_client = storage.Client()
 
