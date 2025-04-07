@@ -4,6 +4,10 @@ from text_extraction import extract_text_from_file, extract_resumes_from_zip
 from resume_ranker import process_resumes
 from io import BytesIO
 import time
+import json
+# from jd_to_json import jobPosting_pre_processing
+from jd_to_text import jobPosting_pre_processing
+import os
 
 # Streamlit UI
 st.set_page_config(page_title="ResuMatrix", page_icon=":briefcase:", layout="wide")
@@ -45,14 +49,20 @@ if "signedout" not in st.session_state:
     st.session_state["signedout"] = False
 if 'signout' not in st.session_state:
     st.session_state['signout'] = False
+if 'next_page' not in st.session_state:
+    st.session_state.next_page = 'dashboard_page'
+
 if "resumes_text" not in st.session_state:
     st.session_state.resumes_text = {}
+if "processed_job_json" not in st.session_state:
+    st.session_state.processed_job_json = ""
 if "job_description" not in st.session_state:
     st.session_state.job_description = ""
 if "show_results" not in st.session_state:
     st.session_state.show_results = False
 if "resumes_binary" not in st.session_state:
     st.session_state.resumes_binary = {}
+
 
 def login_user():
     try:
@@ -108,17 +118,26 @@ if not st.session_state["signedout"]:  # Only show if the state is False
                 st.success(f"Welcome back, {user_info['username']}!")
             else:
                 st.error("Invalid email or password")
+    
 
-elif not st.session_state.show_results:
+elif st.session_state.next_page == 'dashboard_page':
+
     # Dashboard Page
     st.sidebar.title(f"Welcome, {st.session_state.username}!")
     st.sidebar.text(f"Email: {st.session_state.useremail}")
     if st.sidebar.button("Sign Out"):
         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
 
+    if "modifications" not in st.session_state:
+        st.session_state.modifications = []
+
     # Job Description Section
     st.subheader("Enter Job Description")
-    job_description = st.text_area("Paste the job description here:")
+
+    job_description = st.text_area("Paste or edit the job description:", 
+                                   value=st.session_state.get("job_description", ""), 
+                                   key="jd_text")
+    # job_description = st.text_area("Paste the job description here:")
     uploaded_file = st.file_uploader("Or upload a job description file (TXT, PDF, DOCX):", type=["txt", "pdf", "docx"])
     extracted_text = extract_text_from_file(uploaded_file) if uploaded_file else ""
 
@@ -126,15 +145,86 @@ elif not st.session_state.show_results:
         st.text_area("Extracted Job Description:", extracted_text, height=300)
 
     if st.button(":rocket: Submit Job Description"):
-        final_description = job_description if job_description else extracted_text
+        st.session_state.modifications = []
+        final_description = job_description.strip() if job_description.strip() else extracted_text.strip()
+
         if final_description:
             st.session_state.job_description = final_description
+
             with st.spinner('Processing your data...'):
-                time.sleep(2)
-            st.success("Job description submitted successfully!")
+                try:
+                    processed_job_json, processed_job_text = jobPosting_pre_processing(final_description)
+                    st.session_state.processed_job_json = processed_job_json
+                    st.session_state.processed_job_text = processed_job_text
+                    st.session_state.modified_job_posting = False
+
+                except json.JSONDecodeError as e:
+                    st.error(f"Error processing job description JSON: {e}")
+                    st.text_area("Raw JSON Output:", str(processed_job_json))
         else:
             st.error("Please enter or upload a job description.")
+
+
+    if "processed_job_text" in st.session_state:
+        st.subheader("Modify Job Posting")
+
+        # if "processed_text" not in st.session_state:
+        #     st.session_state.processed_text = st.session_state.processed_job_text
+
+        # processed_text = st.text_area("Processed Job Posting:", 
+        #                                                 value=st.session_state.processed_text, 
+        #                                                 height=300,
+        #                                                 key="processed_text")
+
+        st.session_state.processed_text = st.text_area("Processed Job Posting:", 
+                                                        value=st.session_state.processed_job_text, 
+                                                        height=300)
+        
+        new_change = st.text_area("Describe the changes you'd like to make:", value="")
+
+        if st.button(":recycle: Regenerate Job Posting"):
+            if new_change.strip():
+                st.session_state.modifications.append(new_change)
+
+            with st.spinner('Regenerating job posting with modifications...'):
+                try:
+                    combined_modifications = "\n".join(st.session_state.modifications)
+
+                    updated_job_json, updated_job_text = jobPosting_pre_processing(st.session_state.processed_text, combined_modifications)
+
+                    st.session_state.processed_job_json = updated_job_json
+                    st.session_state.processed_job_text = updated_job_text
+                    st.session_state.job_description = updated_job_text
+                    st.session_state.processed_text = updated_job_text
+                    st.session_state.modified_job_posting = True  
+
+                    # Save final job posting locally
+                    save_path = "resumatrix_streamlit/final_job_posting.txt" 
+                    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+                    with open(save_path, "w", encoding="utf-8") as f:
+                        f.write(updated_job_text)                
+
+                    st.rerun()   
+
+                except json.JSONDecodeError as e:
+                    st.error(f"Error processing regenerated job description JSON: {e}")
+                    st.text_area("Raw JSON Output:", str(updated_job_json))
+
+        if st.session_state.get("processed_job_text"):
+            st.markdown("---")
+            if st.button(":arrow_right: Proceed to Resume Upload"):
+                st.session_state.next_page = 'resume_page'
+                st.rerun()
     
+
+elif st.session_state.next_page == 'resume_page':
+
+    st.sidebar.title(f"Welcome, {st.session_state.username}!")
+    st.sidebar.text(f"Email: {st.session_state.useremail}")
+    if st.sidebar.button("Sign Out"):
+        st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
+
     # Resume Upload Section
     st.subheader("Upload Resumes")
     uploaded_resume = st.file_uploader("Upload resumes (Single PDF, DOCX, TXT or ZIP of resumes):", type=["pdf", "docx", "txt", "zip"])
@@ -163,11 +253,13 @@ elif not st.session_state.show_results:
         else:
             with st.spinner('Processing your data...'):
                 time.sleep(2)
+            st.session_state.next_page = 'results_page'
             st.session_state.show_results = True
             st.rerun()
 
+
 # Results Section
-else:
+elif st.session_state.next_page == 'results_page' and st.session_state.show_results:
 # if st.session_state.show_results:
     st.subheader("Best Resume Matches for the Job Description")
     ranked_resumes = process_resumes(st.session_state.job_description, st.session_state.resumes_text, st.session_state.resumes_binary)
@@ -188,5 +280,5 @@ else:
             )
 
     if st.button("Back to Upload Page"):
-        st.session_state.show_results = False
+        st.session_state.next_page = 'dashboard_page'
         st.rerun()
