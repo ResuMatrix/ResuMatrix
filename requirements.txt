@@ -164,4 +164,8 @@ docx==0.2.4
 google==3.0.0
 google.genai==1.9.0
 python-dotenv==0.21.0
-
+pymupdf==1.25.5
+mammoth==1.9.0
+libmagic==1.0
+python-magic-bin==0.4.14
+psycopg2-binary==2.9.10

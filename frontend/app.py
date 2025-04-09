@@ -1,13 +1,16 @@
 import streamlit as st
-from authentication import authenticate_user, register_user
-from text_extraction import extract_text_from_file, extract_resumes_from_zip
-from resume_ranker import process_resumes
 from io import BytesIO
-import time
+from authentication import authenticate_user, register_user
+from text_extraction import extract_text_from_file
+from resume_ranker import process_resumes
 import json
-# from jd_to_json import jobPosting_pre_processing
 from jd_to_text import jobPosting_pre_processing
+from resume_to_csv import resume_pre_processing
+from utils.gcp import upload_to_gcp
+import zipfile
 import os
+import requests
+
 
 # Streamlit UI
 st.set_page_config(page_title="ResuMatrix", page_icon=":briefcase:", layout="wide")
@@ -198,12 +201,17 @@ elif st.session_state.next_page == 'dashboard_page':
                     st.session_state.processed_text = updated_job_text
                     st.session_state.modified_job_posting = True  
 
-                    # Save final job posting locally
-                    save_path = "resumatrix_streamlit/final_job_posting.txt" 
-                    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                    job_file = BytesIO(updated_job_text.encode('utf-8'))
+                    job_file.name = "job_posting.txt"
 
-                    with open(save_path, "w", encoding="utf-8") as f:
-                        f.write(updated_job_text)                
+                    api_url = "http://127.0.0.1:8000/api/upload/job-description"  # Replace with actual API URL
+                    response = requests.post(api_url, files={"file": (job_file.name, job_file, "text/plain")})
+                    job_file.close
+
+                    if response.status_code == 200:
+                        st.success("Job description successfully sent to the API.")
+                    else:
+                        st.error(f"API responded with {response.status_code}: {response.text}")               
 
                     st.rerun()   
 
@@ -216,7 +224,6 @@ elif st.session_state.next_page == 'dashboard_page':
             if st.button(":arrow_right: Proceed to Resume Upload"):
                 st.session_state.next_page = 'resume_page'
                 st.rerun()
-    
 
 elif st.session_state.next_page == 'resume_page':
 
@@ -227,35 +234,126 @@ elif st.session_state.next_page == 'resume_page':
 
     # Resume Upload Section
     st.subheader("Upload Resumes")
-    uploaded_resume = st.file_uploader("Upload resumes (Single PDF, DOCX, TXT or ZIP of resumes):", type=["pdf", "docx", "txt", "zip"])
-    resumes_text = {}
-
+    uploaded_resume = st.file_uploader("Upload resumes (ZIP or a folder):", type=["zip"])
+    
+    # Replace with actual job id and supabase temporary storage path
     if uploaded_resume:
-        if uploaded_resume.name.endswith(".zip"):
-            resumes_text, resume_binary = extract_resumes_from_zip(uploaded_resume)
-            for filename, content in resumes_text.items():
-                st.text_area(f"Extracted Text from {filename}", content, height=300)
-            st.session_state.resumes_text.update(resumes_text)
-            st.session_state.resumes_binary.update(resume_binary)
-        else:
-            extracted_resume_text = extract_text_from_file(uploaded_resume)
-            if extracted_resume_text:
-                st.text_area("Extracted Resume Text:", extracted_resume_text, height=300)
-                st.session_state.resumes_text[uploaded_resume.name] = extracted_resume_text
-                st.session_state.resumes_binary[uploaded_resume.name] = BytesIO(uploaded_resume.getvalue()).getvalue()
+        job_id = st.session_state.username.replace(" ", "_") + "_job"
+        raw_dir = f"temp_resumes/{job_id}"
+        zip_path = f"{raw_dir}.zip"
+        extracted_dir = f"{raw_dir}/extracted"
+        csv_output_path = f"extracted_resumes/{job_id}.csv"
+
+        # Save zip locally
+        with open(zip_path, "wb") as f:
+            f.write(uploaded_resume.getbuffer())
+        st.success(f"Zip saved locally at {zip_path}")
+
+        # Extract resumes
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extracted_dir)
+        st.success(f"Resumes extracted to {extracted_dir}")
+
+        # Store extracted file paths in session for use in submit
+        extracted_files = []
+        for filename in os.listdir(extracted_dir):
+            filepath = os.path.join(extracted_dir, filename)
+            if os.path.isfile(filepath):
+                extracted_files.append((filename, open(filepath, "rb")))
+        st.session_state.extracted_resumes = extracted_files
+    
+
+        # Upload to GCP bucket
+        gcp_bucket_name = "raw-resumes-bucket"
+        gcp_blob_name = f"{job_id}/{uploaded_resume.name}"
+        upload_to_gcp(zip_path, gcp_bucket_name, gcp_blob_name)
+        st.success(f"Uploaded to GCP bucket {gcp_bucket_name}")
+        
+        # # Upload to Postgres
+        # db_params = {
+        #     'host': 'your-postgres-host',
+        #     'port': '5432',
+        #     'dbname': 'your-db-name',
+        #     'user': 'your-db-user',
+        #     'password': 'your-password'
+        # }
+
+        # try:
+        #     upload_csv_to_postgres(csv_output_path, db_params)
+        #     st.success("CSV uploaded to PostgreSQL successfully.")
+        # except Exception as e:
+        #     st.error(f"Postgres upload failed: {e}")
 
 
     if st.button(":rocket: Submit Resumes"):
         if not st.session_state.job_description.strip():  # Ensure job description is not empty or whitespace
             st.error("Please enter or upload a job description before submitting resumes.")
-        elif not st.session_state.resumes_text:  # Ensure resumes are uploaded
-            st.error("Please upload resumes first.")
+        elif "extracted_resumes" not in st.session_state or not st.session_state.extracted_resumes:
+            st.error("Please upload and extract resumes first.")
         else:
-            with st.spinner('Processing your data...'):
-                time.sleep(2)
+            with st.spinner("Sending resumes to resume ranking API..."):
+                api_url = "http://127.0.0.1:8000/api/upload/resumes"  # Replace with actual API URL
+
+                # Prepare POST files list
+                files = [("files", (fname, fobj, "application/octet-stream")) for fname, fobj in st.session_state.extracted_resumes]
+
+                try:
+                    response = requests.post(api_url, files=files)
+                    for _, fobj, _ in files:
+                        fobj.close()  # Close file handles after request
+                    
+                    if response.status_code == 200:
+                        st.success("Resumes successfully submitted to the API.")                
+                    else:
+                        st.error(f"API responded with {response.status_code}: {response.text}")  
+                except Exception as e:
+                        st.error(f"Failed to send resumes to API: {e}")
+
+            st.spinner('Processing your data...')
             st.session_state.next_page = 'results_page'
             st.session_state.show_results = True
             st.rerun()
+    
+
+# elif st.session_state.next_page == 'resume_page':
+
+#     st.sidebar.title(f"Welcome, {st.session_state.username}!")
+#     st.sidebar.text(f"Email: {st.session_state.useremail}")
+#     if st.sidebar.button("Sign Out"):
+#         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
+
+#     # Resume Upload Section
+#     st.subheader("Upload Resumes")
+#     uploaded_resume = st.file_uploader("Upload resumes (Single PDF, DOCX, TXT or ZIP of resumes):", type=["pdf", "docx", "txt", "zip"])
+#     resumes_text = {}
+
+#     if uploaded_resume:
+#         if uploaded_resume.name.endswith(".zip"):
+#             resumes_text, resume_binary = extract_resumes_from_zip(uploaded_resume)
+#             for filename, content in resumes_text.items():
+#                 st.text_area(f"Extracted Text from {filename}", content, height=300)
+#             st.session_state.resumes_text.update(resumes_text)
+
+#             st.session_state.resumes_binary.update(resume_binary)
+#         else:
+#             extracted_resume_text = extract_text_from_file(uploaded_resume)
+#             if extracted_resume_text:
+#                 st.text_area("Extracted Resume Text:", extracted_resume_text, height=300)
+#                 st.session_state.resumes_text[uploaded_resume.name] = extracted_resume_text
+#                 st.session_state.resumes_binary[uploaded_resume.name] = BytesIO(uploaded_resume.getvalue()).getvalue()
+
+
+#     if st.button(":rocket: Submit Resumes"):
+#         if not st.session_state.job_description.strip():  # Ensure job description is not empty or whitespace
+#             st.error("Please enter or upload a job description before submitting resumes.")
+#         elif not st.session_state.resumes_text:  # Ensure resumes are uploaded
+#             st.error("Please upload resumes first.")
+#         else:
+#             with st.spinner('Processing your data...'):
+#                 time.sleep(2)
+#             st.session_state.next_page = 'results_page'
+#             st.session_state.show_results = True
+#             st.rerun()
 
 
 # Results Section
