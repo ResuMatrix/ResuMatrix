@@ -6,6 +6,11 @@ from airflow.operators.email import EmailOperator
 from airflow.utils.log.logging_mixin import LoggingMixin
 from google.cloud import storage
 import os, shutil
+import pandas as pd
+import numpy as np
+import io
+from urllib.parse import urlparse
+from src.data_processing.data_preprocessing import extract_embeddings
 
 # Using Airflow's built-in logger
 log = LoggingMixin().log
@@ -98,36 +103,113 @@ def load_resumes(source_dir):
     log.info("Successfully loaded resume classification dataset!")
     print("Successfully loaded resume classification dataset!")
 
+def load_data_for_fit_pred(ti, **kwargs):
+    """
+    Assumptions:
+        - There is a CSV loaded into "temp_data_store" with all the resumes that need fit classification.
+        - There is a TXT loaded into "temp_data_store" with the corresponding JD that those resumes need to be fit 
+        against.
+        - CSV format: 2 columns, resume_id and resume.
+        - Only one CSV file and one TXT file is present in the directory.
+    """
+    current_file_path = os.path.abspath(__file__)
+    parent_dir = current_file_path[:current_file_path.index("ResuMatrix") + 10]
+    data_dir = os.path.join(parent_dir, "temp_data_store")
 
-def extract_text_from_pdf():
-    log.info("Extracting text from pdf.")
-    print("Extracting text from pdf.")
+    csv_file_path = [i for i in os.listdir(data_dir) if i[-3:] == 'csv'][0]
+    resume_df = pd.read_csv(csv_file_path)
+
+    txt_file_path = [i for i in os.listdir(data_dir) if i[-3:] == 'txt'][0]
+    txt_file = open(txt_file_path, "r")
+    jd_text = txt_file.read()
+
+    resume_df['job_description_text'] = jd_text
+    resume_df.rename({"resume": "resume_text"})
+
+    csv_data = resume_df.to_csv(index=False)
+
+    # Define your GCS bucket and blob name
+    destination_blob_name = "temp_airflow_storage/resume_jd_data.csv"  # Replace with desired blob path
+
+    # Initialize GCS client and upload the CSV string
+    client = storage.Client()
+    bucket = client.get_bucket(BUCKET_NAME)
+    blob = bucket.blob(destination_blob_name)
+    blob.upload_from_string(csv_data, content_type='text/csv')
+
+    # Construct a GCS path that can be used by downstream tasks
+    gcs_path = f"gs://{BUCKET_NAME}/{destination_blob_name}"
+
+    ti.xcom_push(key="data_path", value=gcs_path)
+
+def gen_embeddings(ti, **kwargs):
+    gcs_path = ti.xcom_pull(key="data_path", task_ids="load_data_for_fit_pred_task")
+    if not gcs_path:
+        raise ValueError("No GCS path found in XCom. Check upstream task.")
+
+    # Parse the GCS path to extract bucket and blob names
+    parsed = urlparse(gcs_path)
+    blob_name = parsed.path.lstrip('/')
+
+    # Initialize GCS client and download the CSV file as string
+    client = storage.Client()
+    bucket = client.get_bucket(BUCKET_NAME)
+    blob = bucket.blob(blob_name)
+    csv_data = blob.download_as_string().decode('utf-8')
+
+    # Load the CSV data into a pandas DataFrame
+    resume_df = pd.read_csv(io.StringIO(csv_data))
+    blob.delete()
+
+    X_test = extract_embeddings(resume_df)
+    buffer = io.BytesIO()
+    np.save(buffer, X_test)
+    buffer.seek(0)
+
+    destination_blob_name = "temp_airflow_storage/embeddings_np_array.npy"  # Replace with desired blob path
+
+    # Initialize GCS client and upload the file from the buffer
+    client = storage.Client()
+    bucket = client.get_bucket(BUCKET_NAME)
+    blob = bucket.blob(destination_blob_name)
+
+    # Upload the NumPy binary data to GCS
+    blob.upload_from_file(buffer, content_type="application/octet-stream")
+
+    # Construct the GCS path (URI) to be passed via XCom
+    gcs_path = f"gs://{BUCKET_NAME}/{destination_blob_name}"
+    ti.xcom_push(key="numpy_path", value=gcs_path)
 
 
-def data_cleaning():
-    log.info("Cleaning data and removing personal information.")
-    print("Cleaning data and removing personal information.")
-
-
-def generate_embeddings():
-    log.info("Generating Embeddings.")
-    print("Generating Embeddings.")
-    log.info("Embeddings generated successfully!")
-    print("Embeddings generated successfully!")
-
-
-def parsing_text_json_schema():
-    log.info("Parsing text for LLM in JSON schema.")
-    print("Parsing text for LLM in JSON schema.")
-    log.info("Parsed data successfully!")
-    print("Parsed data successfully!")
-
-def data_transform():
-    log.info("Transforming data into necessary format.")
-    print("Transforming data into necessary format.")
-
-    log.info("Successfully transformed data!")
-    print("Successfully transformed data!")
+# def extract_text_from_pdf():
+#     log.info("Extracting text from pdf.")
+#     print("Extracting text from pdf.")
+#
+#
+# def data_cleaning():
+#     log.info("Cleaning data and removing personal information.")
+#     print("Cleaning data and removing personal information.")
+#
+#
+# def generate_embeddings():
+#     log.info("Generating Embeddings.")
+#     print("Generating Embeddings.")
+#     log.info("Embeddings generated successfully!")
+#     print("Embeddings generated successfully!")
+#
+#
+# def parsing_text_json_schema():
+#     log.info("Parsing text for LLM in JSON schema.")
+#     print("Parsing text for LLM in JSON schema.")
+#     log.info("Parsed data successfully!")
+#     print("Parsed data successfully!")
+#
+# def data_transform():
+#     log.info("Transforming data into necessary format.")
+#     print("Transforming data into necessary format.")
+#
+#     log.info("Successfully transformed data!")
+#     print("Successfully transformed data!")
 
 
 with (DAG(
@@ -138,41 +220,44 @@ with (DAG(
 
     start_task = EmptyOperator(task_id='start')
 
-    load_task = PythonOperator(
+    load_resumes_task = PythonOperator(
         task_id="load_resumes_task",
         python_callable=load_resumes,
-        dag=dag
+        dag=dag,
+        provide_context=True
     )
 
-    extract_task = PythonOperator(
-        task_id="sample_extract_text_task",
-        python_callable=extract_text_from_pdf,
-        dag=dag
+    load_data_for_fit_pred_task = PythonOperator(
+        task_id="load_data_for_fit_pred_task",
+        python_callable=load_data_for_fit_pred,
+        dag=dag,
+        provide_context=True
     )
 
-    data_cleaning_task = PythonOperator(
-        task_id="data_cleaning_task",
-        python_callable=data_cleaning,
-        dag=dag
+    gen_embeddings_task = PythonOperator(
+        task_id="gen_embeddings_task",
+        python_callable=gen_embeddings,
+        dag=dag,
+        provide_context=True
     )
 
-    embed_task = PythonOperator(
-        task_id="embedding_generation_task",
-        python_callable=generate_embeddings,
-        dag=dag
-    )
-
-    parse_text_json_task = PythonOperator(
-        task_id="parse_text_json_task",
-        python_callable=parsing_text_json_schema,
-        dag=dag
-    )
-
-    data_transformation_task = PythonOperator(
-        task_id="data_transformation_task",
-        python_callable=data_transform,
-        dag=dag
-    )
+    # embed_task = PythonOperator(
+    #     task_id="embedding_generation_task",
+    #     python_callable=generate_embeddings,
+    #     dag=dag
+    # )
+    #
+    # parse_text_json_task = PythonOperator(
+    #     task_id="parse_text_json_task",
+    #     python_callable=parsing_text_json_schema,
+    #     dag=dag
+    # )
+    #
+    # data_transformation_task = PythonOperator(
+    #     task_id="data_transformation_task",
+    #     python_callable=data_transform,
+    #     dag=dag
+    # )
 
     end_task = EmptyOperator(task_id='end')
 
@@ -201,5 +286,5 @@ with (DAG(
     )
 
     # set the task dependencies
-    start_task >> load_task >> extract_task >> data_cleaning_task >> [embed_task, parse_text_json_task] >> data_transformation_task >> end_task >> [email_success, email_failure]
+    start_task >> load_resumes_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> end_task >> [email_success, email_failure]
 
