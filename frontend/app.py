@@ -40,9 +40,13 @@ st.markdown("""
             padding: 20px;
             border-radius: 8px;
         }
-        .stSlider > div[data-baseweb="slider"] > div > div {
-        background: #22c55e !important;
-        }   
+        .stSlider > div[data-baseweb="slider"] > div > div > div {
+        background-color: #22c55e;
+        }
+        .stSlider > div[data-baseweb="slider"] > div > div > div > div {
+        color: green !important;
+        font-weight: bold;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -260,7 +264,6 @@ elif st.session_state.next_page == 'resume_page':
                 with open(filepath, "rb") as f:
                     file_bytes = f.read()
                     extracted_files.append((filename, file_bytes))
-                # extracted_files.append((filename, open(filepath, "rb")))
         st.session_state.extracted_resumes = extracted_files
 
     if st.button(":rocket: Submit Resumes"):
@@ -348,7 +351,7 @@ elif st.session_state.next_page == "feedback_page":
     responses = {}
 
     for key, question in feedback_questions.items():
-        responses[key] = st.slider(question, 1, 5, 1)
+        responses[key] = st.select_slider(question, options=[1, 2, 3, 4, 5], value=1)
 
     additional_comments = st.text_area("Any other suggestions or comments?")
 
