@@ -40,6 +40,9 @@ st.markdown("""
             padding: 20px;
             border-radius: 8px;
         }
+        .stSlider > div[data-baseweb="slider"] > div > div {
+        background: #22c55e !important;
+        }   
     </style>
 """, unsafe_allow_html=True)
 
@@ -65,7 +68,8 @@ if "show_results" not in st.session_state:
     st.session_state.show_results = False
 if "resumes_binary" not in st.session_state:
     st.session_state.resumes_binary = {}
-
+if "extracted_resumes" not in st.session_state:
+    st.session_state.extracted_resumes = ""
 
 def login_user():
     try:
@@ -169,15 +173,8 @@ elif st.session_state.next_page == 'dashboard_page':
 
 
     if "processed_job_text" in st.session_state:
+
         st.subheader("Modify Job Posting")
-
-        # if "processed_text" not in st.session_state:
-        #     st.session_state.processed_text = st.session_state.processed_job_text
-
-        # processed_text = st.text_area("Processed Job Posting:", 
-        #                                                 value=st.session_state.processed_text, 
-        #                                                 height=300,
-        #                                                 key="processed_text")
 
         st.session_state.processed_text = st.text_area("Processed Job Posting:", 
                                                         value=st.session_state.processed_job_text, 
@@ -238,11 +235,12 @@ elif st.session_state.next_page == 'resume_page':
     
     # Replace with actual job id and supabase temporary storage path
     if uploaded_resume:
+
         job_id = st.session_state.username.replace(" ", "_") + "_job"
-        raw_dir = f"temp_resumes/{job_id}"
+        raw_dir = f"frontend/temp_resumes"
         zip_path = f"{raw_dir}.zip"
-        extracted_dir = f"{raw_dir}/extracted"
-        csv_output_path = f"extracted_resumes/{job_id}.csv"
+        extracted_dir = f"frontend/extracted_resumes"
+        csv_output_path = f"frontend/extracted_resumes/{job_id}.csv"
 
         # Save zip locally
         with open(zip_path, "wb") as f:
@@ -259,31 +257,11 @@ elif st.session_state.next_page == 'resume_page':
         for filename in os.listdir(extracted_dir):
             filepath = os.path.join(extracted_dir, filename)
             if os.path.isfile(filepath):
-                extracted_files.append((filename, open(filepath, "rb")))
+                with open(filepath, "rb") as f:
+                    file_bytes = f.read()
+                    extracted_files.append((filename, file_bytes))
+                # extracted_files.append((filename, open(filepath, "rb")))
         st.session_state.extracted_resumes = extracted_files
-    
-
-        # Upload to GCP bucket
-        gcp_bucket_name = "raw-resumes-bucket"
-        gcp_blob_name = f"{job_id}/{uploaded_resume.name}"
-        upload_to_gcp(zip_path, gcp_bucket_name, gcp_blob_name)
-        st.success(f"Uploaded to GCP bucket {gcp_bucket_name}")
-        
-        # # Upload to Postgres
-        # db_params = {
-        #     'host': 'your-postgres-host',
-        #     'port': '5432',
-        #     'dbname': 'your-db-name',
-        #     'user': 'your-db-user',
-        #     'password': 'your-password'
-        # }
-
-        # try:
-        #     upload_csv_to_postgres(csv_output_path, db_params)
-        #     st.success("CSV uploaded to PostgreSQL successfully.")
-        # except Exception as e:
-        #     st.error(f"Postgres upload failed: {e}")
-
 
     if st.button(":rocket: Submit Resumes"):
         if not st.session_state.job_description.strip():  # Ensure job description is not empty or whitespace
@@ -313,61 +291,21 @@ elif st.session_state.next_page == 'resume_page':
             st.session_state.next_page = 'results_page'
             st.session_state.show_results = True
             st.rerun()
-    
-
-# elif st.session_state.next_page == 'resume_page':
-
-#     st.sidebar.title(f"Welcome, {st.session_state.username}!")
-#     st.sidebar.text(f"Email: {st.session_state.useremail}")
-#     if st.sidebar.button("Sign Out"):
-#         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
-
-#     # Resume Upload Section
-#     st.subheader("Upload Resumes")
-#     uploaded_resume = st.file_uploader("Upload resumes (Single PDF, DOCX, TXT or ZIP of resumes):", type=["pdf", "docx", "txt", "zip"])
-#     resumes_text = {}
-
-#     if uploaded_resume:
-#         if uploaded_resume.name.endswith(".zip"):
-#             resumes_text, resume_binary = extract_resumes_from_zip(uploaded_resume)
-#             for filename, content in resumes_text.items():
-#                 st.text_area(f"Extracted Text from {filename}", content, height=300)
-#             st.session_state.resumes_text.update(resumes_text)
-
-#             st.session_state.resumes_binary.update(resume_binary)
-#         else:
-#             extracted_resume_text = extract_text_from_file(uploaded_resume)
-#             if extracted_resume_text:
-#                 st.text_area("Extracted Resume Text:", extracted_resume_text, height=300)
-#                 st.session_state.resumes_text[uploaded_resume.name] = extracted_resume_text
-#                 st.session_state.resumes_binary[uploaded_resume.name] = BytesIO(uploaded_resume.getvalue()).getvalue()
-
-
-#     if st.button(":rocket: Submit Resumes"):
-#         if not st.session_state.job_description.strip():  # Ensure job description is not empty or whitespace
-#             st.error("Please enter or upload a job description before submitting resumes.")
-#         elif not st.session_state.resumes_text:  # Ensure resumes are uploaded
-#             st.error("Please upload resumes first.")
-#         else:
-#             with st.spinner('Processing your data...'):
-#                 time.sleep(2)
-#             st.session_state.next_page = 'results_page'
-#             st.session_state.show_results = True
-#             st.rerun()
-
 
 # Results Section
 elif st.session_state.next_page == 'results_page' and st.session_state.show_results:
-# if st.session_state.show_results:
-    st.subheader("Best Resume Matches for the Job Description")
-    ranked_resumes = process_resumes(st.session_state.job_description, st.session_state.resumes_text, st.session_state.resumes_binary)
+    
+    st.sidebar.text(f"Email: {st.session_state.useremail}")
+    if st.sidebar.button("Sign Out"):
+        st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
 
-    for rank, filename, file_content in ranked_resumes:
+    st.subheader("Best Resume Matches for the Job Description \n")
+    
+    # Show all extracted resumes without ranking logic
+    for filename, file_content in st.session_state.extracted_resumes:
         col1, col2 = st.columns([4, 1])  # Adjust column width (more space for text, less for button)
-
         with col1:
-            st.write(f"**{rank}. {filename}**")
-
+            st.write(f"**{filename}**")
         with col2:
             st.download_button(
                 label=":floppy_disk:",  
@@ -376,7 +314,60 @@ elif st.session_state.next_page == 'results_page' and st.session_state.show_resu
                 mime="application/octet-stream",
                 key=f"download_{filename}"
             )
+        
+    col_next, col_back = st.columns([2, 2])
 
-    if st.button("Back to Upload Page"):
-        st.session_state.next_page = 'dashboard_page'
-        st.rerun()
+    with col_next:
+        if st.button("📋 Continue to Feedback"):
+            st.session_state.next_page = "feedback_page"
+            st.rerun()
+    
+    with col_back:
+        if st.button("Back to Upload Page"):
+            st.session_state.next_page = 'dashboard_page'
+            st.rerun()
+
+elif st.session_state.next_page == "feedback_page":
+    st.sidebar.text(f"Email: {st.session_state.useremail}")
+    if st.sidebar.button("Sign Out"):
+        st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
+
+    st.sidebar.title(f"Thanks for visiting, {st.session_state.username}!")
+    st.title("📋 We value your feedback")
+
+    st.markdown("Please rate your experience with Resumatrix \n")
+
+    feedback_questions = {
+        "job_clarity": "How clear was the job posting after editing?",
+        "resume_relevance": "Was the resume ranking relevant to the job description?",
+        "system_satisfaction": "Did the system meet your expectations?",
+        "interface_usability": "How easy was it to use the interface?",
+        "recommendation_likelihood": "How likely are you to recommend this tool?"
+    }
+
+    responses = {}
+
+    for key, question in feedback_questions.items():
+        responses[key] = st.slider(question, 1, 5, 1)
+
+    additional_comments = st.text_area("Any other suggestions or comments?")
+
+    if st.button("📨 Submit Feedback"):
+        feedback_payload = {
+            "username": st.session_state.username,
+            "useremail": st.session_state.useremail,
+            "job_id": st.session_state.username.replace(" ", "_") + "_job",
+            "responses": responses,
+            "comments": additional_comments
+        }
+
+    api_url = "http://127.0.0.1:8000/api/feedback/submit"  # Replace with your actual feedback endpoint
+
+    try:
+        response = requests.post(api_url, json=feedback_payload)
+        if response.status_code == 200:
+            st.success("✅ Thank you for your feedback!")
+        else:
+            st.error(f"API responded with {response.status_code}: {response.text}")
+    except Exception as e:
+        st.error(f"Failed to send feedback: {e}")
