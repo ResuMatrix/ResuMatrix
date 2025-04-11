@@ -17,8 +17,11 @@ ADD . /app
 
 WORKDIR /app
 
+# uv creates a .venv folder, sets up a python environment
 RUN uv sync --frozen
 
 ENV PATH="/app/.venv/bin:$PATH"
+
+EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app"]
