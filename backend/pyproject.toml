@@ -1,0 +1,15 @@
+[project]
+name = "resumatrix"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115.12",
+    "google-cloud-storage>=3.1.0",
+    "pydantic-settings>=2.8.1",
+    "pymupdf>=1.25.5",
+    "python-multipart>=0.0.20",
+    "supabase>=2.15.0",
+    "uvicorn>=0.34.0",
+]
