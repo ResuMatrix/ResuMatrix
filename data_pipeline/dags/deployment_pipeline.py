@@ -179,7 +179,7 @@ def gen_embeddings(ti, **kwargs):
     resume_df = pd.read_csv(io.StringIO(csv_data))
     blob.delete()
 
-    X_test = extract_embeddings(resume_df)
+    X_test = extract_embeddings(resume_df, data_type="deployment")
     buffer = io.BytesIO()
     np.save(buffer, X_test)
     buffer.seek(0)
@@ -231,7 +231,7 @@ def gen_embeddings(ti, **kwargs):
 
 
 with (DAG(
-        'resumatrix_data_pipeline_dag',
+        'resumatrix_deployment_data_pipeline_dag',
         default_args=default_args,
         description="A pipeline for extracting text from resumes and creating embeddings"
         ) as dag):
