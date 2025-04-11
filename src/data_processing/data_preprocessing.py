@@ -98,16 +98,26 @@ def get_embeddings(text):
         outputs = model(**inputs)
     return outputs.last_hidden_state[:, 0, :].cpu().numpy().flatten()  # Get CLS token embedding
 
-def extract_embeddings(df):
+def extract_embeddings(df, data_type="train"):
     """Generate embeddings for resumes and job descriptions."""
-    resume_embeddings = np.array([get_embeddings(text) for text in df["resume_text"]])
-    jd_embeddings = np.array([get_embeddings(text) for text in df["job_description_text"]])
+    df['resume_embeddings'] = df['resume_text'].apply(get_embeddings)
+    df['job_embeddings'] = df['job_description_text'].apply(get_embeddings)
+    X = np.array([np.concatenate([r, j]) for r, j in zip(df['resume_embeddings'], df['job_embeddings'])])
+    if data_type == "train":
+        y = df['label'].values
+        return X, y
+    return X
 
-    # Compute cosine similarity between resume and job description embeddings
-    cosine_similarities = [cosine_similarity([r], [j])[0][0] for r, j in zip(resume_embeddings, jd_embeddings)]
-    # Convert to NumPy array
-    cosine_similarities = np.array(cosine_similarities).reshape(-1, 1)
-    return cosine_similarities
+# def extract_embeddings(df):
+#     """Generate embeddings for resumes and job descriptions."""
+#     resume_embeddings = np.array([get_embeddings(text) for text in df["resume_text"]])
+#     jd_embeddings = np.array([get_embeddings(text) for text in df["job_description_text"]])
+#
+#     # Compute cosine similarity between resume and job description embeddings
+#     cosine_similarities = [cosine_similarity([r], [j])[0][0] for r, j in zip(resume_embeddings, jd_embeddings)]
+#     # Convert to NumPy array
+#     cosine_similarities = np.array(cosine_similarities).reshape(-1, 1)
+#     return cosine_similarities
 
 
 def compute_jaccard_similarity(text1, text2):
