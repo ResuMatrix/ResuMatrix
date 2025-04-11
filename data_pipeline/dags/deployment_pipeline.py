@@ -10,7 +10,6 @@ import pandas as pd
 import numpy as np
 import io
 from urllib.parse import urlparse
-from src.data_processing.data_preprocessing import extract_embeddings
 
 # Using Airflow's built-in logger
 log = LoggingMixin().log
@@ -25,11 +24,11 @@ default_args = {
         'email': ['mlops.team20@gmail.com'],
         }
 
-DATA_DIR = '~/data/workspace/mlops/ResuMatrix/data'
+# DATA_DIR = '~/data/workspace/mlops/ResuMatrix/data'
 
 BUCKET_NAME = "us-east1-mlops-dev-8ad13d78-bucket"
 
-os.makedirs(DATA_DIR, exist_ok=True)
+# os.makedirs(DATA_DIR, exist_ok=True)
 
 
 # Pipeline
@@ -160,6 +159,7 @@ def load_data_for_fit_pred(ti, **kwargs):
     ti.xcom_push(key="data_path", value=gcs_path)
 
 def gen_embeddings(ti, **kwargs):
+    from data_processing.data_preprocessing import extract_embeddings
     gcs_path = ti.xcom_pull(key="data_path", task_ids="load_data_for_fit_pred_task")
     if not gcs_path:
         raise ValueError("No GCS path found in XCom. Check upstream task.")
