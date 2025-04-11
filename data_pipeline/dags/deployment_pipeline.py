@@ -5,7 +5,7 @@ from airflow.operators.empty import EmptyOperator
 from airflow.operators.email import EmailOperator
 from airflow.utils.log.logging_mixin import LoggingMixin
 from google.cloud import storage
-import os, shutil
+from airflow.providers.google.cloud.hooks.gcs import GCSHook
 import pandas as pd
 import numpy as np
 import io
@@ -34,74 +34,86 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 # Pipeline
 
-def load_resumes(source_dir):
-    log.info("Loading data for resume classification.")
-    """
-        Prerequisites:
-        Python library needed: google-cloud-storage
-        Download JSON key file from google cloud console.
-            Go to "IAM & Admin / Service Accounts".
-            Click on the "awesome-nimbus" service account.
-            Click on the "Keys" tab. Click on Add key -> Create new key -> Key type: JSON.
-            The JSON file of the private key will be downloaded to your local.
-        Set an environment variable to point to the key file:
-            export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your-service-account-key.json"
-        Have Google Cloud CLI installed. Enter the command "gcloud init".
-            Re-initialize configuration. Option 1.
-            Choose your account that is associated with the GCP project.
-            Pick our cloud project to use, namely, awesome-nimbus.
-            Do not configure region and zone.
-        Run the command "gcloud auth application-default login".
-            This opens a new tab in your browser. Allow permissions for the account you had selected initially.
-            Credentials will be set and this python function should run.
-    """
-    print("Loading dataset for resume classification.")
-    storage_client = storage.Client()
-
-    # Get the bucket
-    bucket = storage_client.bucket(BUCKET_NAME)
-
-    # Get the blob
-    blobs = bucket.list_blobs(prefix=source_dir)
-
-    current_file_path = os.path.abspath(__file__)
-
-    parent_dir = current_file_path[:current_file_path.index("ResuMatrix") + 10]
-    data_dir = os.path.join(parent_dir, "temp_data_store")
-
-    # Cleaning temporary data store before loading in new resumes
-    if os.path.isdir(data_dir):
-        for filename in os.listdir(data_dir):
-            file_path = os.path.join(data_dir, filename)
-            try:
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                print('Failed to delete %s. Reason: %s' % (file_path, e))
-
-    os.makedirs(data_dir, exist_ok=True)
-
-    for blob in blobs:
-        # Skip any "directory" blobs.
-        if blob.name.endswith('/'):
-            continue
-
-        # Remove the prefix from the blob name to get the relative file path.
-        relative_path = os.path.relpath(blob.name, source_dir)
-        local_file_path = os.path.join(data_dir, relative_path)
-
-        # Create local directories if they don't exist.
-        local_dir = os.path.dirname(local_file_path)
-        if not os.path.exists(local_dir):
-            os.makedirs(local_dir)
-
-        # Download the blob to the local file.
-        blob.download_to_filename(local_file_path)
-        print(f"Downloaded {blob.name} to {local_file_path}")
-    log.info("Successfully loaded resume classification dataset!")
-    print("Successfully loaded resume classification dataset!")
+# def load_resumes(**kwargs):
+#     log.info("Loading data for resume classification.")
+#     """
+#         Prerequisites:
+#         Python library needed: google-cloud-storage
+#         Download JSON key file from google cloud console.
+#             Go to "IAM & Admin / Service Accounts".
+#             Click on the "awesome-nimbus" service account.
+#             Click on the "Keys" tab. Click on Add key -> Create new key -> Key type: JSON.
+#             The JSON file of the private key will be downloaded to your local.
+#         Set an environment variable to point to the key file:
+#             export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your-service-account-key.json"
+#         Have Google Cloud CLI installed. Enter the command "gcloud init".
+#             Re-initialize configuration. Option 1.
+#             Choose your account that is associated with the GCP project.
+#             Pick our cloud project to use, namely, awesome-nimbus.
+#             Do not configure region and zone.
+#         Run the command "gcloud auth application-default login".
+#             This opens a new tab in your browser. Allow permissions for the account you had selected initially.
+#             Credentials will be set and this python function should run.
+#     """
+#     print("Loading dataset for resume classification.")
+#     hook = GCSHook(gcp_conn_id='google_cloud_default')
+#     storage_client = hook.get_conn()
+#
+#     # Get the bucket
+#     bucket = storage_client.bucket(BUCKET_NAME)
+#
+#     dag_run_conf = kwargs.get('dag_run').conf or {}
+#     source_dir = dag_run_conf.get('source_dir', 'random_resumes')
+#
+#     # Get the blob
+#     blobs = bucket.list_blobs(prefix=source_dir)
+#
+#     current_file_path = os.path.abspath(__file__)
+#     log.info("Current file path: ")
+#     log.info(current_file_path)
+#
+#     parent_dir = current_file_path[:current_file_path.index("dags") + 4]
+#     data_dir = os.path.join(parent_dir, "temp_data_store")
+#     log.info("Data directory: ")
+#     log.info(data_dir)
+#
+#     # Cleaning temporary data store before loading in new resumes
+#     if os.path.isdir(data_dir):
+#         for filename in os.listdir(data_dir):
+#             file_path = os.path.join(data_dir, filename)
+#             try:
+#                 if os.path.isfile(file_path) or os.path.islink(file_path):
+#                     os.unlink(file_path)
+#                 elif os.path.isdir(file_path):
+#                     shutil.rmtree(file_path)
+#             except Exception as e:
+#                 print('Failed to delete %s. Reason: %s' % (file_path, e))
+#
+#     os.makedirs(data_dir, exist_ok=True)
+#
+#     for blob in blobs:
+#         # Skip any "directory" blobs.
+#         if blob.name.endswith('/'):
+#             continue
+#
+#         # Remove the prefix from the blob name to get the relative file path.
+#         relative_path = os.path.relpath(blob.name, source_dir)
+#         log.info("Relative path: ")
+#         log.info(relative_path)
+#         local_file_path = os.path.join(data_dir, relative_path)
+#         log.info("Local File Path: ")
+#         log.info(local_file_path)
+#
+#         # Create local directories if they don't exist.
+#         local_dir = os.path.dirname(local_file_path)
+#         if not os.path.exists(local_dir):
+#             os.makedirs(local_dir, exist_ok=True)
+#
+#         # Download the blob to the local file.
+#         blob.download_to_filename(local_file_path)
+#         print(f"Downloaded {blob.name} to {local_file_path}")
+#     log.info("Successfully loaded resume classification dataset!")
+#     print("Successfully loaded resume classification dataset!")
 
 def load_data_for_fit_pred(ti, **kwargs):
     """
@@ -112,16 +124,24 @@ def load_data_for_fit_pred(ti, **kwargs):
         - CSV format: 2 columns, resume_id and resume.
         - Only one CSV file and one TXT file is present in the directory.
     """
-    current_file_path = os.path.abspath(__file__)
-    parent_dir = current_file_path[:current_file_path.index("ResuMatrix") + 10]
-    data_dir = os.path.join(parent_dir, "temp_data_store")
-
-    csv_file_path = [i for i in os.listdir(data_dir) if i[-3:] == 'csv'][0]
-    resume_df = pd.read_csv(csv_file_path)
-
-    txt_file_path = [i for i in os.listdir(data_dir) if i[-3:] == 'txt'][0]
-    txt_file = open(txt_file_path, "r")
-    jd_text = txt_file.read()
+    hook = GCSHook(gcp_conn_id='google_cloud_default')
+    client = hook.get_conn()
+    bucket = client.get_bucket(BUCKET_NAME)
+    dag_run_conf = kwargs.get('dag_run').conf or {}
+    source_dir = dag_run_conf.get('source_dir', 'random_resumes')
+    blobs = bucket.list_blobs(prefix=source_dir)
+    resume_df = pd.DataFrame()
+    jd_text = ""
+    for blob in blobs:
+        if blob.name.endswith('.csv'):
+            csv_data = blob.download_as_text(encoding='utf-8')
+            resume_df = pd.read_csv(io.StringIO(csv_data))
+        if blob.name.endswith('.txt'):
+            jd_text = blob.download_as_text(encoding='utf-8')
+    if len(resume_df.index) == 0:
+        raise ValueError("No resume CSV file found in given source directory.")
+    if len(jd_text) == 0:
+        raise ValueError("No text file found for Job Description or the file is empty.")
 
     resume_df['job_description_text'] = jd_text
     resume_df.rename({"resume": "resume_text"})
@@ -131,9 +151,6 @@ def load_data_for_fit_pred(ti, **kwargs):
     # Define your GCS bucket and blob name
     destination_blob_name = "temp_airflow_storage/resume_jd_data.csv"  # Replace with desired blob path
 
-    # Initialize GCS client and upload the CSV string
-    client = storage.Client()
-    bucket = client.get_bucket(BUCKET_NAME)
     blob = bucket.blob(destination_blob_name)
     blob.upload_from_string(csv_data, content_type='text/csv')
 
@@ -152,7 +169,8 @@ def gen_embeddings(ti, **kwargs):
     blob_name = parsed.path.lstrip('/')
 
     # Initialize GCS client and download the CSV file as string
-    client = storage.Client()
+    hook = GCSHook(gcp_conn_id='google_cloud_default')
+    client = hook.get_conn()
     bucket = client.get_bucket(BUCKET_NAME)
     blob = bucket.blob(blob_name)
     csv_data = blob.download_as_string().decode('utf-8')
@@ -220,12 +238,12 @@ with (DAG(
 
     start_task = EmptyOperator(task_id='start')
 
-    load_resumes_task = PythonOperator(
-        task_id="load_resumes_task",
-        python_callable=load_resumes,
-        dag=dag,
-        provide_context=True
-    )
+    # load_resumes_task = PythonOperator(
+    #     task_id="load_resumes_task",
+    #     python_callable=load_resumes,
+    #     dag=dag,
+    #     provide_context=True
+    # )
 
     load_data_for_fit_pred_task = PythonOperator(
         task_id="load_data_for_fit_pred_task",
@@ -286,5 +304,5 @@ with (DAG(
     )
 
     # set the task dependencies
-    start_task >> load_resumes_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> end_task >> [email_success, email_failure]
+    start_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> end_task >> [email_success, email_failure]
 
