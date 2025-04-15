@@ -8,14 +8,11 @@ from functools import wraps
 from typing import Callable, Any, Tuple
 import os
 import json
-from dotenv import load_dotenv
 import streamlit as st
 import re
+from app.core.config import settings
 
-# Load environment variables
-load_dotenv()
-
-client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
+client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 # Nested models and main model for JobPosting
 class Qualifications(BaseModel):

@@ -1,12 +1,11 @@
 import streamlit as st
 from io import BytesIO
-from authentication import authenticate_user, register_user
+from supabase_auth import authenticate_user, register_user
 from text_extraction import extract_text_from_file
 from resume_ranker import process_resumes
 import json
 from jd_to_text import jobPosting_pre_processing
 from resume_to_csv import resume_pre_processing
-from utils.gcp import upload_to_gcp
 import zipfile
 import os
 import requests
@@ -61,6 +60,7 @@ if 'signout' not in st.session_state:
     st.session_state['signout'] = False
 if 'next_page' not in st.session_state:
     st.session_state.next_page = 'dashboard_page'
+    # st.session_state.next_page = ''
 
 if "resumes_text" not in st.session_state:
     st.session_state.resumes_text = {}
@@ -75,20 +75,6 @@ if "resumes_binary" not in st.session_state:
 if "extracted_resumes" not in st.session_state:
     st.session_state.extracted_resumes = ""
 
-def login_user():
-    try:
-        user_info = authenticate_user(st.session_state.email_input, st.session_state.password_input)
-        if user_info:
-            st.session_state.username = user_info["username"]
-            st.session_state.useremail = user_info["email"]
-            st.session_state.signedout = True
-            st.session_state.signout = True
-            st.success(f"Welcome back, {user_info['username']}!")
-        else:
-            st.error("Invalid email or password")
-    except Exception as e:
-        st.warning(f"Login failed: {e}")
-
 def sign_up_user():
     try:
         if register_user(st.session_state.email_input, st.session_state.password_input, st.session_state.username_input):
@@ -98,11 +84,28 @@ def sign_up_user():
     except Exception as e:
         st.warning(f"Signup failed: {e}")
 
+def login_user():
+    try:
+        user_info = authenticate_user(st.session_state.email_input, st.session_state.password_input)
+        if user_info:
+            st.session_state.username = user_info["username"]
+            st.session_state.useremail = user_info["email"]
+            st.session_state.userid = user_info["id"]
+            st.session_state.signedout = True
+            st.session_state.signout = True
+            st.success(f"Welcome back, {user_info['username']}!")
+        else:
+            st.error("Invalid email or password")
+    except Exception as e:
+        st.warning(f"Login failed: {e}")
+
 # Main flow
 if st.session_state.signout:
     st.text('Name: ' + st.session_state.username)
     st.text('Email id: ' + st.session_state.useremail)
-    st.button('Sign out', on_click=lambda: st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""}))
+    st.button('Sign out', on_click=lambda: st.session_state.update({
+        "signout": False, "signedout": False, "username": "", "useremail": "", "userid": ""
+    }))
 
 # Authentication Page
 if not st.session_state["signedout"]:  # Only show if the state is False
@@ -120,16 +123,8 @@ if not st.session_state["signedout"]:  # Only show if the state is False
             sign_up_user()
     else:
         if st.button('Login', on_click=login_user):
-            user_info = authenticate_user(email, password)
-            if user_info:
-                st.session_state.username = user_info["username"]
-                st.session_state.useremail = user_info["email"]
-                st.session_state.signedout = True
-                st.session_state.signout = True
-                st.success(f"Welcome back, {user_info['username']}!")
-            else:
-                st.error("Invalid email or password")
-    
+            st.session_state.next_page = 'dashboard_page'
+            # login_user()
 
 elif st.session_state.next_page == 'dashboard_page':
 
