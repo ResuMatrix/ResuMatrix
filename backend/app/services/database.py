@@ -121,4 +121,16 @@ class DatabaseService:
             logger.error(f"Error updating resume status: {str(e)}")
             raise
 
+    # TrainingData CRUD
+    async def get_training_data(self) -> Optional[List[TrainingData]]:
+        """Returns all TrainingData"""
+        try:
+            result = self.client.table("training_data").select("*").execute()
+            if not result.data:
+                return None
+
+            return TrainingDataList.model_validate({"training_data_list": result.data}).training_data_list
+        except Exception as e:
+            logger.error(f"Error fetching training_data: {str(e)}")
+            raise
 
