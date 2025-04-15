@@ -1,6 +1,7 @@
 from typing import List
-from fastapi import APIRouter, HTTPException, Response, UploadFile, Depends, Body
+from fastapi import APIRouter, HTTPException, UploadFile, Depends, Body
 from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 import pymupdf
 from app.services.database import DatabaseService
 from app.services.storage import StorageService
@@ -54,4 +55,63 @@ async def upload_resume_files(
         raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
 
 
+@router.get("/{job_id}/resumes", status_code=200)
+async def get_all_resumes_with_job_id(
+        job_id: str,
+        db_service:DatabaseService = Depends(get_db_service)):
+    try:
+        resumes = await db_service.get_resumes_with_job_id(job_id)
+        jd = await db_service.get_job(job_id)
+        if resumes is None or jd is None:
+            LOG.error(f"No resumes found with job_id: {job_id}")
+            raise HTTPException(status_code=404, detail=f"No resumes found with job_id: {job_id}")
+        else:
+            return JSONResponse(content={"job_text": jd.job_text, "resumes" : jsonable_encoder(resumes)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.get("/{job_id}/resumes/{resume_id}", status_code=200)
+async def get_resume_with_id(
+        resume_id: str,
+        db_service:DatabaseService = Depends(get_db_service)):
+    try:
+        resume = await db_service.get_resume(resume_id)
+        if resume is None:
+            LOG.error(f"No resume found with resume_id: {resume_id}")
+            raise HTTPException(status_code=404, detail=f"No resume found with resume_id: {resume_id}")
+        else:
+            return JSONResponse(content={"resume" : jsonable_encoder(resume)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.get("/{job_id}", status_code=200)
+async def get_job_with_id(
+        job_id: str,
+        db_service:DatabaseService = Depends(get_db_service)):
+    try:
+        jd = await db_service.get_job(job_id)
+        if jd is None:
+            LOG.error(f"No job found with job_id: {job_id}")
+            raise HTTPException(status_code=404, detail=f"No job found with job_id: {job_id}")
+        else:
+            return JSONResponse(content={"job": jsonable_encoder(jd)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.get("/", status_code=200)
+async def get_all_jobs_by_user_id(data: dict = Body(...),
+                     db_service: DatabaseService = Depends(get_db_service)):
+    try:
+        user_id = data["user_id"]
+        jobs = await db_service.get_jobs_by_user_id(user_id)
+        if jobs is None:
+            LOG.error(f"No jobs found with user_id: {user_id}")
+            raise HTTPException(status_code=404, detail=f"No jobs found with user_id: {user_id}")
+        else:
+            return JSONResponse(content={"jobs": jsonable_encoder(jobs)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
