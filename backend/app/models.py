@@ -21,6 +21,19 @@ class Resume(BaseModel):
     resume_text: str
     status: int
     fit_probability: float
+    feedback_label: int
 
 class ResumeList(BaseModel):
     resume_list: List[Resume]
+
+
+class TrainingData(BaseModel):
+    id:uuid.UUID
+    resume_text: str
+    job_description_text: str
+    label: str
+    created_at: datetime
+
+
+class TrainingDataList(BaseModel):
+    training_data_list: List[TrainingData]
