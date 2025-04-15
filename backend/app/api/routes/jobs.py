@@ -20,7 +20,7 @@ async def create_job(data: dict = Body(...),
     try:
         job = await db_service.create_job(data["job_text"], data["user_id"])
         LOG.info(f"Job created with id: {job.id}")
-        return job
+        return JSONResponse(content={"job": jsonable_encoder(job)})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create a job item: {str(e)}")
 
