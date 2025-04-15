@@ -60,7 +60,6 @@ if 'signout' not in st.session_state:
     st.session_state['signout'] = False
 if 'next_page' not in st.session_state:
     st.session_state.next_page = 'dashboard_page'
-    # st.session_state.next_page = ''
 
 if "resumes_text" not in st.session_state:
     st.session_state.resumes_text = {}
