@@ -1,13 +1,21 @@
 from datetime import datetime, timedelta
 from airflow import DAG
-from airflow.operators.python import PythonOperator 
+from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.email import EmailOperator
-from airflow.utils.log.logging_mixin import LoggingMixin
+import logging
 import os
 
-# Using Airflow's built-in logger
-log = LoggingMixin().log  
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('/opt/airflow/logs/resumatrix_pipeline.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 default_args = {
         'owner': 'admin',
@@ -19,7 +27,7 @@ default_args = {
         'email': ['mlops.team20@gmail.com'],
         }
 
-DATA_DIR = '~/data/workspace/mlops/ResuMatrix/data'
+DATA_DIR = '/opt/airflow/data'  # Use absolute path consistent with Docker setup
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -27,41 +35,32 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # Pipeline
 
 def load_resumes():
-    log.info("Loading dataset for resume classification.")
-    print("Loading dataset for resume classification.")
-    log.info("Successfully loaded resume classification dataset!")
-    print("Successfully loaded resume classification dataset!")
+    logger.info("Loading dataset for resume classification.")
+    # ... rest of the function
 
 
 def extract_text_from_pdf():
-    log.info("Extracting text from pdf.")
-    print("Extracting text from pdf.")
+    logger.info("Extracting text from pdf.")
+    # ... rest of the function
 
 
 def data_cleaning():
-    log.info("Cleaning data and removing personal information.")
-    print("Cleaning data and removing personal information.")
+    logger.info("Cleaning data and removing personal information.")
+    # ... rest of the function
 
 
 def generate_embeddings():
-    log.info("Generating Embeddings.")
-    print("Generating Embeddings.")
-    log.info("Embeddings generated successfully!")
-    print("Embeddings generated successfully!")
+    logger.info("Generating Embeddings.")
+    # ... rest of the function
 
 
 def parsing_text_json_schema():
-    log.info("Parsing text for LLM in JSON schema.")
-    print("Parsing text for LLM in JSON schema.")
-    log.info("Parsed data successfully!")
-    print("Parsed data successfully!")
+    logger.info("Parsing text for LLM in JSON schema.")
+    # ... rest of the function
 
 def data_transform():
-    log.info("Transforming data into necessary format.")
-    print("Transforming data into necessary format.")
-
-    log.info("Successfully transformed data!")
-    print("Successfully transformed data!")
+    logger.info("Transforming data into necessary format.")
+    # ... rest of the function
 
 
 with (DAG(
