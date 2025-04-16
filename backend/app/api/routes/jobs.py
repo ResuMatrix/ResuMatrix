@@ -102,14 +102,18 @@ async def get_job_with_id(
 
 
 @router.get("/", status_code=200)
-async def get_all_jobs_by_user_id(data: dict = Body(...),
-                     db_service: DatabaseService = Depends(get_db_service)):
+async def get_all_jobs_by_user_id(
+        user_id: str | None = None,
+        db_service: DatabaseService = Depends(get_db_service)):
     try:
-        user_id = data["user_id"]
-        jobs = await db_service.get_jobs_by_user_id(user_id)
+        if user_id is not None:
+            jobs = await db_service.get_jobs_by_user_id(user_id)
+        else:
+            jobs  = await db_service.get_all_jobs()
+        
         if jobs is None:
-            LOG.error(f"No jobs found with user_id: {user_id}")
-            raise HTTPException(status_code=404, detail=f"No jobs found with user_id: {user_id}")
+            error_msg = f"No jobs found with user_id: {user_id}" if user_id else "No jobs found"
+            raise HTTPException(status_code=404, detail=error_msg)
         else:
             return JSONResponse(content={"jobs": jsonable_encoder(jobs)})
     except Exception as e:
