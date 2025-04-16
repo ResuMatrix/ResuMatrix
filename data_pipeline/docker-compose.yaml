@@ -33,13 +33,11 @@ x-airflow-common:
     &airflow-common-env
     AIRFLOW_UID: ${AIRFLOW_UID:-50000}
     AIRFLOW_GID: ${AIRFLOW_GID:-50000}
-    # Supabase credentials from .env file
-    SUPABASE_URL: ${SUPABASE_URL}
-    SUPABASE_KEY: ${SUPABASE_KEY}
-
+    # API URL for connecting to host machine
+    RESUMATRIX_API_URL: 'http://host.docker.internal:8000/api'
     # GCP-related environment variables
     AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: 'google-cloud-platform://?extra__google_cloud_platform__key_path=/etc/secrets/gcp_key.json'
-    GCP_PROJECT_ID: ${GCP_PROJECT_ID}
+    GCP_PROJECT_ID: awesome-nimbus-452221-v2
     GOOGLE_APPLICATION_CREDENTIALS: /etc/secrets/gcp_key.json
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -68,10 +66,12 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/scripts:/opt/airflow/scripts
     - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
     - ../src:/opt/airflow/src
-    # Comment out the GCP key path for now - you'll need to provide the correct path on your Mac
-    - ./awesome-nimbus-452221-v2-7082cef23cbe.json:/etc/secrets/gcp_key.json:ro
+    - ./awesome-nimbus-452221-v2-06cf77823029.json:/etc/secrets/gcp_key.json:ro
     - ./requirements.txt:/requirements.txt
   user: "${AIRFLOW_UID:-50000}:0"
+  # Add host.docker.internal mapping for Linux hosts
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   # Default entrypoint will be used
   depends_on:
     &airflow-common-depends-on
