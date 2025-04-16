@@ -10,108 +10,52 @@ logger = logging.getLogger(__name__)
 API_BASE_URL = os.getenv("RESUMATRIX_API_URL", "http://host.docker.internal:8000/api")
 
 def get_joined_resumes_from_api() -> list[dict]:
-    """
-    Fetch resumes with feedback_label=1 from the ResuMatrix API and join with job descriptions.
-    Returns a list of dictionaries containing job_description_text, resume_text, and label.
-    """
     try:
         logger.info(f"Fetching jobs from ResuMatrix API at {API_BASE_URL}...")
+        jobs_response = requests.get(f"{API_BASE_URL}/jobs/", timeout=10)
+        jobs_response.raise_for_status()
+        jobs = jobs_response.json().get("jobs", [])
+        logger.info(f"Retrieved {len(jobs)} jobs.")
 
-        # Detailed logging for jobs request
-        try:
-            jobs_response = requests.get(f"{API_BASE_URL}/jobs/", timeout=10)
-            logger.info(f"Jobs API response status code: {jobs_response.status_code}")
+        logger.info("Fetching all resumes...")
+        resumes_response = requests.get(f"{API_BASE_URL}/resumes/", timeout=10)
+        resumes_response.raise_for_status()
+        resumes = resumes_response.json().get("resumes", [])
+        logger.info(f"Retrieved {len(resumes)} resumes.")
 
-            # Log response headers for debugging
-            logger.debug(f"Response headers: {dict(jobs_response.headers)}")
+        # Build job lookup by ID
+        job_map = {job["id"]: job.get("job_text", "") for job in jobs}
+        joined_data = 0
+        result = []
 
-            # Check for error status codes
-            jobs_response.raise_for_status()
+        for resume in resumes:
+            if resume.get("feedback_label") != 1:
+                continue
 
-            # Parse response
-            jobs = jobs_response.json()
-            logger.info(f"Successfully retrieved {len(jobs)} jobs from API")
-        except requests.exceptions.Timeout:
-            logger.error("Request to jobs API timed out after 10 seconds")
-            raise
-        except requests.exceptions.ConnectionError as conn_err:
-            logger.error(f"Connection error to jobs API: {conn_err}")
-            raise
-        except requests.exceptions.HTTPError as http_err:
-            logger.error(f"HTTP error from jobs API: {http_err}")
-            # Log response content if available
-            if hasattr(jobs_response, 'text'):
-                logger.error(f"Response content: {jobs_response.text[:500]}")
-            raise
-        except ValueError as json_err:
-            logger.error(f"Invalid JSON in jobs API response: {json_err}")
-            logger.error(f"Response content: {jobs_response.text[:500]}")
-            raise
+            job_id = resume.get("job_id")
+            job_text = job_map.get(job_id)
+            if not job_text:
+                continue  # Skip if job not found
 
-        joined_data = []
+            status = resume.get("status")
+            if status == 1:
+                label = "fit"
+            elif status == 0:
+                label = "no fit"
+            else:
+                continue  # Skip if status not explicitly fit/no fit
 
-        for job in jobs:
-            job_id = job["id"]
-            job_text = job.get("job_text", "")
-            logger.info(f"Processing job ID: {job_id}")
+            result.append({
+                "job_description_text": job_text,
+                "resume_text": resume.get("resume_text", ""),
+                "label": label
+            })
+            joined_data += 1
 
-            # Detailed logging for resumes request
-            try:
-                resumes_url = f"{API_BASE_URL}/jobs/{job_id}/resumes"
-                logger.info(f"Fetching resumes from: {resumes_url}")
-                resumes_response = requests.get(resumes_url, timeout=10)
-                logger.info(f"Resumes API response status code: {resumes_response.status_code}")
-
-                # Check for error status codes
-                resumes_response.raise_for_status()
-
-                # Parse response
-                resumes = resumes_response.json()
-                logger.info(f"Successfully retrieved {len(resumes)} resumes for job ID {job_id}")
-            except requests.exceptions.Timeout:
-                logger.error(f"Request to resumes API for job ID {job_id} timed out after 10 seconds")
-                continue  # Skip this job but continue with others
-            except requests.exceptions.ConnectionError as conn_err:
-                logger.error(f"Connection error to resumes API for job ID {job_id}: {conn_err}")
-                continue  # Skip this job but continue with others
-            except requests.exceptions.HTTPError as http_err:
-                logger.error(f"HTTP error from resumes API for job ID {job_id}: {http_err}")
-                # Log response content if available
-                if hasattr(resumes_response, 'text'):
-                    logger.error(f"Response content: {resumes_response.text[:500]}")
-                continue  # Skip this job but continue with others
-            except ValueError as json_err:
-                logger.error(f"Invalid JSON in resumes API response for job ID {job_id}: {json_err}")
-                logger.error(f"Response content: {resumes_response.text[:500]}")
-                continue  # Skip this job but continue with others
-
-            # Process resumes for this job
-            matched_resumes = 0
-            for resume in resumes:
-                if resume.get("feedback_label") != 1:
-                    continue
-
-                status = resume.get("status")
-                if status == 1:
-                    label = "fit"
-                elif status == 0:
-                    label = "no fit"
-                else:
-                    continue  # Skip if not explicitly fit or no fit
-
-                joined_data.append({
-                    "job_description_text": job_text,
-                    "resume_text": resume.get("resume_text", ""),
-                    "label": label
-                })
-                matched_resumes += 1
-
-            logger.info(f"Added {matched_resumes} matching resumes for job ID {job_id}")
-
-        logger.info(f"Fetched and joined {len(joined_data)} resume-job pairs from API.")
-        if not joined_data:
-            logger.warning("No matching resume-job pairs found in the API.")
-        return joined_data
+        logger.info(f"Joined {joined_data} resume-job pairs from API.")
+        if not result:
+            logger.warning("No matching resume-job pairs found.")
+        return result
 
     except requests.RequestException as e:
         logger.error(f"API request error: {e}")
@@ -119,29 +63,64 @@ def get_joined_resumes_from_api() -> list[dict]:
         logger.error(f"Detailed traceback: {traceback.format_exc()}")
         raise
 
+def fetch_existing_training_data() -> pd.DataFrame:
+    try:
+        logger.info("Fetching existing training data from /api/training/data")
+        response = requests.get(f"{API_BASE_URL}/training/data", timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+        if not isinstance(data, list):
+            logger.error("Training data response is not a list.")
+            return pd.DataFrame()
+
+        df = pd.DataFrame(data)
+        expected_columns = {"job_description_text", "resume_text", "label"}
+        if not expected_columns.issubset(df.columns):
+            logger.error(f"Training data missing expected columns. Found columns: {df.columns.tolist()}")
+            return pd.DataFrame()
+
+        logger.info(f"Fetched {len(df)} existing training records")
+        return df
+
+    except Exception as e:
+        logger.error(f"Failed to fetch existing training data: {e}")
+        return pd.DataFrame()
+
 
 def fetch_training_data() -> pd.DataFrame:
     """
-    Fetch training data from the ResuMatrix API and return as a DataFrame.
-    Only includes joined resumes with feedback_label=1.
+    Fetch and merge training data from the ResuMatrix API.
+    Combines initial training data and newly joined resumes.
     """
     try:
-        logger.info("Fetching training data from ResuMatrix API...")
-        joined_data = get_joined_resumes_from_api()
-        training_df = pd.DataFrame(joined_data)
+        logger.info("Fetching initial and new training data...")
+        existing_df = fetch_existing_training_data()
+        new_data = get_joined_resumes_from_api()
+        new_df = pd.DataFrame(new_data)
 
-        if training_df.empty:
-            logger.warning("No training data found from API.")
-        else:
-            logger.info(f"Training dataset shape: {training_df.shape}")
+        logger.info(f"New joined resume-job data shape: {new_df.shape}")
 
-        return training_df
+        # Validate and filter both datasets
+        def is_valid_label(label): return label in ["fit", "no fit", "potential fit"]
+        all_data = pd.concat([existing_df, new_df], ignore_index=True)
+
+        # Drop rows with missing fields or invalid labels
+        valid_data = all_data.dropna(subset=["job_description_text", "resume_text", "label"])
+        valid_data = valid_data[valid_data["label"].apply(is_valid_label)]
+
+        # Remove duplicates
+        deduped_data = valid_data.drop_duplicates(subset=["job_description_text", "resume_text"])
+        logger.info(f"Final deduplicated training data shape: {deduped_data.shape}")
+
+        return deduped_data
 
     except Exception as e:
-        logger.error(f"Error fetching training data: {str(e)}")
+        logger.error(f"Error merging training data: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
         raise
+
 
 
 def save_training_data(df, output_path=None):

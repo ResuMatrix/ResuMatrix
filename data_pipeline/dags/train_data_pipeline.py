@@ -4,6 +4,7 @@ from airflow.operators.python import PythonOperator
 from airflow.models import Variable
 import sys
 import os
+from google.cloud import storage
 
 # Add the scripts directory to the Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'scripts'))
@@ -12,16 +13,24 @@ from fetch_huggingface_data import fetch_huggingface_data
 from load_to_supabase import load_to_supabase
 
 def validate_environment():
+    """Validate all required environment variables and credentials"""
     required_vars = [
         'SUPABASE_URL',
         'SUPABASE_KEY',
-        # Temporarily commenting out GCP requirements
-        # 'GOOGLE_APPLICATION_CREDENTIALS',
-        # 'GCP_PROJECT_ID'
+        'GOOGLE_APPLICATION_CREDENTIALS',
+        'GCP_PROJECT_ID'
     ]
     missing = [var for var in required_vars if not os.getenv(var)]
     if missing:
         raise ValueError(f"Missing required environment variables: {missing}")
+    
+    # Validate GCP credentials
+    try:
+        client = storage.Client()
+        bucket = client.bucket(BUCKET_NAME)
+        bucket.reload()
+    except Exception as e:
+        raise ValueError(f"GCP credentials validation failed: {str(e)}")
 
 default_args = {
     'owner': 'airflow',
