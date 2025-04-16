@@ -50,6 +50,20 @@ class DatabaseService:
             logger.error(f"Error fetching jobs for user {user_id}: {str(e)}")
             raise
 
+    # Get all jobs for traininig
+    async def get_all_jobs(self) -> Optional[List[Job]]:
+        """Returns all jobs for data crunching"""
+        try:
+            result = self.client.table("jobs").select("*").execute()
+            if not result.data:
+                return None
+
+            return JobList.model_validate({"job_list": result.data}).job_list
+        except Exception as e:
+            logger.error(f"Error fetching jobs: {str(e)}")
+            raise
+
+
     # Resume CRUD functions
     async def create_resume(self, job_id: str, resume_text:str) -> Optional[Resume]:
         """Creates a new resume row in the database"""
@@ -93,7 +107,7 @@ class DatabaseService:
 
             return Resume.model_validate(result.data[0])
         except Exception as e:
-            logger.error(f"Error fetching resume: {str(e)}")
+            logger.error(f"Error fetching resume with id {resume_id}: {str(e)}")
             raise
 
 
@@ -106,7 +120,20 @@ class DatabaseService:
 
             return ResumeList.model_validate({"resume_list": result.data}).resume_list
         except Exception as e:
-            logger.error(f"Error fetching resume: {str(e)}")
+            logger.error(f"Error fetching resume withs job {job_id}: {str(e)}")
+            raise
+
+
+    async def get_all_resumes(self) -> Optional[List[Resume]]:
+        """Returns all resumes for data crunching"""
+        try:
+            result = self.client.table("resumes").select("*").execute()
+            if not result.data:
+                return None
+
+            return ResumeList.model_validate({"resume_list": result.data}).resume_list
+        except Exception as e:
+            logger.error(f"Error fetching resumes: {str(e)}")
             raise
 
 
