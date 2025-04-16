@@ -10,6 +10,7 @@ import zipfile
 import os
 import requests
 
+API_BASE_URL = os.getenv("RESUMATRIX_API_URL", "http://localhost:8000")
 
 # Streamlit UI
 st.set_page_config(page_title="ResuMatrix", page_icon=":briefcase:", layout="wide")
@@ -123,7 +124,6 @@ if not st.session_state["signedout"]:  # Only show if the state is False
     else:
         if st.button('Login', on_click=login_user):
             st.session_state.next_page = 'dashboard_page'
-            # login_user()
 
 elif st.session_state.next_page == 'dashboard_page':
 
@@ -197,16 +197,7 @@ elif st.session_state.next_page == 'dashboard_page':
                     st.session_state.modified_job_posting = True  
 
                     job_file = BytesIO(updated_job_text.encode('utf-8'))
-                    job_file.name = "job_posting.txt"
-
-                    api_url = "http://127.0.0.1:8000/api/upload/job-description"  # Replace with actual API URL
-                    response = requests.post(api_url, files={"file": (job_file.name, job_file, "text/plain")})
-                    job_file.close
-
-                    if response.status_code == 200:
-                        st.success("Job description successfully sent to the API.")
-                    else:
-                        st.error(f"API responded with {response.status_code}: {response.text}")               
+                    job_file.name = "job_posting.txt"              
 
                     st.rerun()   
 
@@ -217,8 +208,25 @@ elif st.session_state.next_page == 'dashboard_page':
         if st.session_state.get("processed_job_text"):
             st.markdown("---")
             if st.button(":arrow_right: Proceed to Resume Upload"):
-                st.session_state.next_page = 'resume_page'
-                st.rerun()
+
+                if "job_description" in st.session_state and "userid" in st.session_state:
+                    api_url = f"{API_BASE_URL}/jobs/"
+                    payload = {
+                        "job_text": st.session_state.job_description,
+                        "user_id": st.session_state.userid  # Supabase Auth User ID
+                    }
+
+                    response = requests.post(api_url, json=payload)
+                    if response.ok:
+                        job_data = response.json()["job"]
+                        st.session_state.job_id = job_data["id"]  # Save for resume upload
+                        st.success("Job description successfully stored in Supabase.")
+                        st.session_state.next_page = 'resume_page'
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to upload job description: {response.text}")
+                else:
+                    st.error("Missing job description or user ID.")
 
 elif st.session_state.next_page == 'resume_page':
 
@@ -229,16 +237,17 @@ elif st.session_state.next_page == 'resume_page':
 
     # Resume Upload Section
     st.subheader("Upload Resumes")
-    uploaded_resume = st.file_uploader("Upload resumes (ZIP or a folder):", type=["zip"])
+    uploaded_resume = st.file_uploader("Upload resumes (ZIP only):", type=["zip"])
     
     # Replace with actual job id and supabase temporary storage path
     if uploaded_resume:
 
-        job_id = st.session_state.username.replace(" ", "_") + "_job"
-        raw_dir = f"frontend/temp_resumes"
-        zip_path = f"{raw_dir}.zip"
-        extracted_dir = f"frontend/extracted_resumes"
-        csv_output_path = f"frontend/extracted_resumes/{job_id}.csv"
+        temp_dir = "frontend/temp_resumes"
+        extracted_dir = "frontend/extracted_resumes"
+        zip_path = "frontend/uploaded.zip"
+
+        os.makedirs(temp_dir, exist_ok=True)
+        os.makedirs(extracted_dir, exist_ok=True)
 
         # Save zip locally
         with open(zip_path, "wb") as f:
@@ -249,45 +258,51 @@ elif st.session_state.next_page == 'resume_page':
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(extracted_dir)
         st.success(f"Resumes extracted to {extracted_dir}")
+        st.write("Job ID:", st.session_state.job_id)
 
-        # Store extracted file paths in session for use in submit
+        # Collect all PDFs
         extracted_files = []
         for filename in os.listdir(extracted_dir):
-            filepath = os.path.join(extracted_dir, filename)
-            if os.path.isfile(filepath):
+            if filename.endswith(".pdf"):
+                filepath = os.path.join(extracted_dir, filename)
                 with open(filepath, "rb") as f:
                     file_bytes = f.read()
-                    extracted_files.append((filename, file_bytes))
+                    extracted_files.append((filename, BytesIO(file_bytes)))
+            else:
+                st.warning(f"Skipped non-PDF file: {filename}")
+
         st.session_state.extracted_resumes = extracted_files
+        
+        if st.button(":rocket: Submit Resumes"):
+            if not st.session_state.get("job_id"):
+                st.error("Missing job ID. Please make sure the job description was uploaded.")
+            elif "extracted_resumes" not in st.session_state or not st.session_state.extracted_resumes:
+                st.error("Please upload and extract resumes first.")
+            else:
+                with st.spinner("Sending resumes to resume ranking API..."):
+                    api_url = f"{API_BASE_URL}/jobs/{st.session_state.job_id}/resumes"
 
-    if st.button(":rocket: Submit Resumes"):
-        if not st.session_state.job_description.strip():  # Ensure job description is not empty or whitespace
-            st.error("Please enter or upload a job description before submitting resumes.")
-        elif "extracted_resumes" not in st.session_state or not st.session_state.extracted_resumes:
-            st.error("Please upload and extract resumes first.")
-        else:
-            with st.spinner("Sending resumes to resume ranking API..."):
-                api_url = "http://127.0.0.1:8000/api/upload/resumes"  # Replace with actual API URL
+                    files = [
+                        ("files", (fname, fobj, "application/octet-stream"))
+                        for fname, fobj in st.session_state.extracted_resumes
+                    ]
 
-                # Prepare POST files list
-                files = [("files", (fname, fobj, "application/octet-stream")) for fname, fobj in st.session_state.extracted_resumes]
-
-                try:
-                    response = requests.post(api_url, files=files)
-                    for _, fobj, _ in files:
-                        fobj.close()  # Close file handles after request
                     
-                    if response.status_code == 200:
-                        st.success("Resumes successfully submitted to the API.")                
-                    else:
-                        st.error(f"API responded with {response.status_code}: {response.text}")  
-                except Exception as e:
+                    st.write(f"Making POST request to: {api_url}")
+                    try:
+                        response = requests.post(api_url, files=files)
+                        if response.ok:
+                            st.success("Resumes successfully submitted and stored in Supabase.")
+                            public_urls = response.json().get("public_urls", [])
+                            st.session_state.resume_public_urls = public_urls
+                            st.session_state.next_page = 'results_page'
+                            st.session_state.show_results = True
+                            st.rerun()
+                        else:
+                            st.error(f"API responded with {response.status_code}: {response.text}")
+                            st.write("Backend error details:", response.text)
+                    except Exception as e:
                         st.error(f"Failed to send resumes to API: {e}")
-
-            st.spinner('Processing your data...')
-            st.session_state.next_page = 'results_page'
-            st.session_state.show_results = True
-            st.rerun()
 
 # Results Section
 elif st.session_state.next_page == 'results_page' and st.session_state.show_results:

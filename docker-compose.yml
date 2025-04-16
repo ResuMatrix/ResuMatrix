@@ -1,0 +1,28 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ${GCP_SECRET_JSON_PATH}:/app/gcp_secret_key.json:ro
+    env_file:
+      - .env
+    environment:
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID}
+      GOOGLE_APPLICATION_CREDENTIALS: /app/gcp_secret_key.json
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "8501:8501"
+    volumes:
+      - ${GCP_SECRET_JSON_PATH}:/streamlit_app/gcp_secret_key.json:ro
+    env_file:
+      - .env
+    environment:
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID}
+      GOOGLE_APPLICATION_CREDENTIALS: /streamlit_app/gcp_secret_key.json

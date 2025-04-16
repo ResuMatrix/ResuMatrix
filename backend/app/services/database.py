@@ -73,6 +73,7 @@ class DatabaseService:
                     "resume_text": resume_text,
                     "status": -2,
                     "fit_probability": 0,
+                    "feedback_label": 0,
                  } for resume_text in resume_text_list
             ]
         try:
@@ -80,7 +81,7 @@ class DatabaseService:
             return ResumeList.model_validate({"resume_list": result.data}).resume_list
         except Exception as e:
             logger.error(f"Error creating resumes for job_id {job_id}: {str(e)}")
-        raise
+            raise
 
 
     async def get_resume(self, resume_id: str) -> Optional[Resume]:

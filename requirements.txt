@@ -172,3 +172,4 @@ psycopg2-binary==2.9.10
 fastapi==0.115.12
 fastapi.responses==0.2.1
 supabase==2.15.0
+uv==0.6.14
