@@ -12,10 +12,10 @@ import requests
 import time
 import requests
 from google.cloud import storage
+from pathlib import Path
 
 API_BASE_URL = os.getenv("RESUMATRIX_API_URL", "http://localhost:8000")
 GCP_BUCKET = os.getenv("GCP_BUCKET_NAME")
-GCP_CREDENTIALS = os.getenv("GCP_SECRET_JSON_PATH")
 
 # Streamlit UI
 st.set_page_config(page_title="ResuMatrix", page_icon=":briefcase:", layout="wide")
@@ -376,7 +376,7 @@ elif st.session_state.next_page == 'results_page' and st.session_state.show_resu
     ranked_resumes = sorted([r for r in resumes_data if r["status"] > 0], key=lambda x: x["status"])
     unfit_resumes = [r for r in resumes_data if r["status"] == -1]
 
-    client = storage.Client.from_service_account_json(GCP_CREDENTIALS)
+    client = storage.Client.from_service_account_json("gcp_secret_key.json")
     bucket = client.bucket(bucket_name)
 
     def get_resume_file_by_id(resume_id):
