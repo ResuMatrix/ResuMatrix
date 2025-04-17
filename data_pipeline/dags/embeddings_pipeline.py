@@ -205,7 +205,7 @@ def fetch_and_save_training_data(**kwargs):
 
 def generate_and_save_embeddings(**kwargs):
     """
-    Generate embeddings from the training data and save them locally.
+    Generate embeddings from the training data, split into train/test sets, and save them locally.
 
     Returns:
         dict: Paths to the saved embeddings and metadata files
@@ -213,6 +213,7 @@ def generate_and_save_embeddings(**kwargs):
     try:
         # Import here to avoid loading at DAG definition time
         from src.data_processing.data_preprocessing import extract_embeddings, clean_text
+        from sklearn.model_selection import train_test_split
 
         # Get the training data path from XCom
         ti = kwargs['ti']
@@ -227,52 +228,91 @@ def generate_and_save_embeddings(**kwargs):
             df['resume_text'] = df['resume_text'].apply(clean_text)
             df['job_description_text'] = df['job_description_text'].apply(clean_text)
 
-        # Generate embeddings
-        logger.info("Generating embeddings...")
-        X, y = extract_embeddings(df, data_type="train")
+        # Split the data into train (80%) and test (20%) sets
+        logger.info("Splitting data into train and test sets (80/20 split)...")
+        train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
+        logger.info(f"Train set shape: {train_df.shape}, Test set shape: {test_df.shape}")
 
         # Create directory for embeddings if it doesn't exist
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         embeddings_dir = '/opt/airflow/data/embeddings'
         os.makedirs(embeddings_dir, exist_ok=True)
 
-        # Save embeddings to a local file
-        embeddings_path = f"{embeddings_dir}/embeddings_{timestamp}.npz"
-        np.savez(embeddings_path, X=X, y=y)
+        # Process train set
+        logger.info("Generating embeddings for train set...")
+        X_train, y_train = extract_embeddings(train_df, data_type="train")
 
-        logger.info(f"Embeddings saved to {embeddings_path}")
+        # Process test set
+        logger.info("Generating embeddings for test set...")
+        X_test, y_test = extract_embeddings(test_df, data_type="train")
 
-        # Save metadata
-        # Log the type and values of y to help with debugging
-        logger.info(f"Label type: {type(y)}, shape: {y.shape if hasattr(y, 'shape') else 'N/A'}")
-        logger.info(f"Unique labels: {np.unique(y)}")
+        # Save train embeddings to a local file
+        train_embeddings_path = f"{embeddings_dir}/train_embeddings_{timestamp}.npz"
+        np.savez(train_embeddings_path, X=X_train, y=y_train)
+        logger.info(f"Train embeddings saved to {train_embeddings_path}")
 
-        # Convert string labels to numeric if needed
-        numeric_y = np.zeros_like(y, dtype=int)
-        for i, label in enumerate(y):
+        # Save test embeddings to a local file
+        test_embeddings_path = f"{embeddings_dir}/test_embeddings_{timestamp}.npz"
+        np.savez(test_embeddings_path, X=X_test, y=y_test)
+        logger.info(f"Test embeddings saved to {test_embeddings_path}")
+
+        # Log the type and values of labels to help with debugging
+        logger.info(f"Train labels type: {type(y_train)}, shape: {y_train.shape if hasattr(y_train, 'shape') else 'N/A'}")
+        logger.info(f"Train unique labels: {np.unique(y_train)}")
+        logger.info(f"Test labels type: {type(y_test)}, shape: {y_test.shape if hasattr(y_test, 'shape') else 'N/A'}")
+        logger.info(f"Test unique labels: {np.unique(y_test)}")
+
+        # Convert string labels to numeric if needed (for train set)
+        train_numeric_y = np.zeros_like(y_train, dtype=int)
+        for i, label in enumerate(y_train):
             if isinstance(label, str):
                 if label.lower() == 'fit':
-                    numeric_y[i] = 1
+                    train_numeric_y[i] = 1
                 elif label.lower() == 'no fit':
-                    numeric_y[i] = 0
+                    train_numeric_y[i] = 0
                 # Skip other labels
             else:
                 # Assume numeric labels are already correct
-                numeric_y[i] = int(label)
+                train_numeric_y[i] = int(label)
 
-        # Calculate class distribution using the numeric labels
-        fit_count = int(np.sum(numeric_y == 1))
-        no_fit_count = int(np.sum(numeric_y == 0))
+        # Convert string labels to numeric if needed (for test set)
+        test_numeric_y = np.zeros_like(y_test, dtype=int)
+        for i, label in enumerate(y_test):
+            if isinstance(label, str):
+                if label.lower() == 'fit':
+                    test_numeric_y[i] = 1
+                elif label.lower() == 'no fit':
+                    test_numeric_y[i] = 0
+                # Skip other labels
+            else:
+                # Assume numeric labels are already correct
+                test_numeric_y[i] = int(label)
 
-        logger.info(f"Calculated class distribution: fit={fit_count}, no_fit={no_fit_count}")
+        # Calculate class distribution for train set
+        train_fit_count = int(np.sum(train_numeric_y == 1))
+        train_no_fit_count = int(np.sum(train_numeric_y == 0))
 
+        # Calculate class distribution for test set
+        test_fit_count = int(np.sum(test_numeric_y == 1))
+        test_no_fit_count = int(np.sum(test_numeric_y == 0))
+
+        logger.info(f"Train set class distribution: fit={train_fit_count}, no_fit={train_no_fit_count}")
+        logger.info(f"Test set class distribution: fit={test_fit_count}, no_fit={test_no_fit_count}")
+
+        # Save metadata
         metadata = {
             'timestamp': timestamp,
-            'num_samples': len(df),
-            'embedding_dim': X.shape[1],
-            'class_distribution': {
-                'fit': fit_count,
-                'no_fit': no_fit_count
+            'total_samples': len(df),
+            'train_samples': len(train_df),
+            'test_samples': len(test_df),
+            'embedding_dim': X_train.shape[1],
+            'train_class_distribution': {
+                'fit': train_fit_count,
+                'no_fit': train_no_fit_count
+            },
+            'test_class_distribution': {
+                'fit': test_fit_count,
+                'no_fit': test_no_fit_count
             }
         }
 
@@ -283,11 +323,13 @@ def generate_and_save_embeddings(**kwargs):
         logger.info(f"Metadata saved to {metadata_path}")
 
         # Push the paths to XCom for the next task
-        ti.xcom_push(key='embeddings_path', value=embeddings_path)
+        ti.xcom_push(key='train_embeddings_path', value=train_embeddings_path)
+        ti.xcom_push(key='test_embeddings_path', value=test_embeddings_path)
         ti.xcom_push(key='metadata_path', value=metadata_path)
 
         return {
-            'embeddings_path': embeddings_path,
+            'train_embeddings_path': train_embeddings_path,
+            'test_embeddings_path': test_embeddings_path,
             'metadata_path': metadata_path
         }
 
@@ -297,7 +339,7 @@ def generate_and_save_embeddings(**kwargs):
 
 def upload_to_gcs_bucket(**kwargs):
     """
-    Upload embeddings and metadata files to Google Cloud Storage.
+    Upload train/test embeddings and metadata files to Google Cloud Storage.
     If GCS upload fails, save files locally and log the paths.
 
     Returns:
@@ -305,7 +347,8 @@ def upload_to_gcs_bucket(**kwargs):
     """
     # Get the file paths from XCom
     ti = kwargs['ti']
-    embeddings_path = ti.xcom_pull(task_ids='generate_embeddings_task', key='embeddings_path')
+    train_embeddings_path = ti.xcom_pull(task_ids='generate_embeddings_task', key='train_embeddings_path')
+    test_embeddings_path = ti.xcom_pull(task_ids='generate_embeddings_task', key='test_embeddings_path')
     metadata_path = ti.xcom_pull(task_ids='generate_embeddings_task', key='metadata_path')
 
     try:
@@ -322,14 +365,23 @@ def upload_to_gcs_bucket(**kwargs):
                 logger.warning(f"Bucket {GCS_BUCKET_NAME} does not exist. Will create it.")
                 bucket = client.create_bucket(GCS_BUCKET_NAME)
 
-            # Upload embeddings file to GCS
-            embeddings_blob_name = f"embeddings/{os.path.basename(embeddings_path)}"
-            logger.info(f"Uploading embeddings to GCS: {embeddings_blob_name}")
+            # Upload train embeddings file to GCS
+            train_blob_name = f"embeddings/{os.path.basename(train_embeddings_path)}"
+            logger.info(f"Uploading train embeddings to GCS: {train_blob_name}")
 
             # Create a blob and upload the file
-            embeddings_blob = bucket.blob(embeddings_blob_name)
-            with open(embeddings_path, 'rb') as f:
-                embeddings_blob.upload_from_file(f, content_type="application/octet-stream")
+            train_blob = bucket.blob(train_blob_name)
+            with open(train_embeddings_path, 'rb') as f:
+                train_blob.upload_from_file(f, content_type="application/octet-stream")
+
+            # Upload test embeddings file to GCS
+            test_blob_name = f"embeddings/{os.path.basename(test_embeddings_path)}"
+            logger.info(f"Uploading test embeddings to GCS: {test_blob_name}")
+
+            # Create a blob and upload the file
+            test_blob = bucket.blob(test_blob_name)
+            with open(test_embeddings_path, 'rb') as f:
+                test_blob.upload_from_file(f, content_type="application/octet-stream")
 
             # Upload metadata file to GCS
             metadata_blob_name = f"metadata/{os.path.basename(metadata_path)}"
@@ -341,7 +393,8 @@ def upload_to_gcs_bucket(**kwargs):
                 metadata_blob.upload_from_file(f, content_type="application/json")
 
             gcs_paths = {
-                'embeddings_gcs_path': f"gs://{GCS_BUCKET_NAME}/{embeddings_blob_name}",
+                'train_embeddings_gcs_path': f"gs://{GCS_BUCKET_NAME}/{train_blob_name}",
+                'test_embeddings_gcs_path': f"gs://{GCS_BUCKET_NAME}/{test_blob_name}",
                 'metadata_gcs_path': f"gs://{GCS_BUCKET_NAME}/{metadata_blob_name}"
             }
 
@@ -358,7 +411,8 @@ def upload_to_gcs_bucket(**kwargs):
 
         # Return local paths instead
         local_paths = {
-            'embeddings_local_path': embeddings_path,
+            'train_embeddings_local_path': train_embeddings_path,
+            'test_embeddings_local_path': test_embeddings_path,
             'metadata_local_path': metadata_path
         }
 
