@@ -47,9 +47,9 @@ async def upload_resume_files(
                     text += pdf_doc[page_num].get_text("text")
             resume_text_list.append(text)
 
-        _ = await db_service.create_resumes(job_id, resume_text_list)
+        resumes = await db_service.create_resumes(job_id, resume_text_list)
         
-        public_urls = await storage_service.upload_resumes(job_id, files) 
+        public_urls = await storage_service.upload_resumes(job_id, files, resumes) 
         return JSONResponse(content={"public_urls": public_urls}, status_code=201)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")

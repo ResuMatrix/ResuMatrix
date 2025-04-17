@@ -79,7 +79,7 @@ class DatabaseService:
             logger.error(f"Error creating resume: {str(e)}")
             raise
 
-    async def create_resumes(self, job_id: str, resume_text_list: List[str]) -> Optional[List[Resume]]:
+    async def create_resumes(self, job_id: str, resume_text_list: List[str]) -> List[Resume]:
         """Creates multiple resumes given a job_id"""
         resume_list = [
                 {
