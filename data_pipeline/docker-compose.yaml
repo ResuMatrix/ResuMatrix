@@ -30,7 +30,7 @@ x-airflow-common:
   &airflow-common
   build: .
   env_file:
-    - ../.env
+    - ./.env
   environment:
     &airflow-common-env
     AIRFLOW_UID: ${AIRFLOW_UID:-50000}
@@ -73,7 +73,7 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/scripts:/opt/airflow/scripts
     - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
     - ../src:/opt/airflow/src
-    - ../awesome-nimbus-452221-v2-06cf77823029.json:/etc/secrets/gcp_key.json:ro
+    - ${GCP_JSON_PATH}:/etc/secrets/gcp_key.json:ro
     - ./requirements.txt:/requirements.txt
   user: "${AIRFLOW_UID:-50000}:0"
   # Add host.docker.internal mapping for Linux hosts
