@@ -242,36 +242,23 @@ elif st.session_state.next_page == 'resume_page':
     # Replace with actual job id and supabase temporary storage path
     if uploaded_resume:
 
-        temp_dir = "frontend/temp_resumes"
-        extracted_dir = "frontend/extracted_resumes"
-        zip_path = "frontend/uploaded.zip"
-
-        os.makedirs(temp_dir, exist_ok=True)
-        os.makedirs(extracted_dir, exist_ok=True)
-
-        # Save zip locally
-        with open(zip_path, "wb") as f:
-            f.write(uploaded_resume.getbuffer())
-        st.success(f"Zip saved locally at {zip_path}")
-
-        # Extract resumes
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extracted_dir)
-        st.success(f"Resumes extracted to {extracted_dir}")
-        st.write("Job ID:", st.session_state.job_id)
-
-        # Collect all PDFs
+        zip_bytes = BytesIO(uploaded_resume.getvalue())
         extracted_files = []
-        for filename in os.listdir(extracted_dir):
-            if filename.endswith(".pdf"):
-                filepath = os.path.join(extracted_dir, filename)
-                with open(filepath, "rb") as f:
-                    file_bytes = f.read()
-                    extracted_files.append((filename, BytesIO(file_bytes)))
-            else:
-                st.warning(f"Skipped non-PDF file: {filename}")
 
-        st.session_state.extracted_resumes = extracted_files
+        with zipfile.ZipFile(zip_bytes, 'r') as zip_ref:
+            for file_info in zip_ref.infolist():
+                if file_info.filename.endswith('.pdf'):
+                    with zip_ref.open(file_info) as file:
+                        pdf_bytes = file.read()
+                        extracted_files.append((file_info.filename, BytesIO(pdf_bytes)))
+                else:
+                    st.warning(f"Skipped non-PDF file: {file_info.filename}")
+
+        if not extracted_files:
+            st.error("No PDF files found in the uploaded ZIP.")
+        else:
+            st.session_state.extracted_resumes = extracted_files
+            st.success(f"{len(extracted_files)} PDF resumes extracted successfully.")
         
         if st.button(":rocket: Submit Resumes"):
             if not st.session_state.get("job_id"):
@@ -287,8 +274,6 @@ elif st.session_state.next_page == 'resume_page':
                         for fname, fobj in st.session_state.extracted_resumes
                     ]
 
-                    
-                    st.write(f"Making POST request to: {api_url}")
                     try:
                         response = requests.post(api_url, files=files)
                         if response.ok:
@@ -300,7 +285,6 @@ elif st.session_state.next_page == 'resume_page':
                             st.rerun()
                         else:
                             st.error(f"API responded with {response.status_code}: {response.text}")
-                            st.write("Backend error details:", response.text)
                     except Exception as e:
                         st.error(f"Failed to send resumes to API: {e}")
 
