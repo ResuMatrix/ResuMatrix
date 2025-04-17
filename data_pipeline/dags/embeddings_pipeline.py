@@ -66,7 +66,7 @@ def fetch_and_save_training_data(**kwargs):
     """
     try:
         # Import here to avoid loading at DAG definition time
-        from scripts.fetch_training_data import fetch_training_data, save_training_data
+        from scripts.fetch_training_data import save_training_data
         import pandas as pd
         import os
         import socket
@@ -99,12 +99,86 @@ def fetch_and_save_training_data(**kwargs):
         except requests.exceptions.RequestException as conn_error:
             logger.error(f"API connection test failed: {str(conn_error)}")
 
-        # Fetch the actual training data
+        # Fetch the training data using the updated logic
         logger.info("Fetching training data from API...")
-        df = fetch_training_data()
+
+        # Import the specific functions we need
+        from scripts.fetch_training_data import fetch_existing_training_data, get_joined_resumes_from_api
+
+        # Step 1: Always use the existing training dataset from /api/training/data as the base
+        logger.info("Fetching existing training data from /api/training/data endpoint...")
+        existing_df = fetch_existing_training_data()
+        logger.info(f"Existing training data shape: {existing_df.shape}")
+
+        # Log more details about the existing data
+        if not existing_df.empty:
+            logger.info(f"Existing data columns: {existing_df.columns.tolist()}")
+            logger.info(f"Existing data label distribution: {existing_df['label'].value_counts().to_dict()}")
+            if len(existing_df) > 0:
+                logger.info(f"Sample of existing data (first row): {existing_df.iloc[0].to_dict()}")
+        else:
+            logger.warning("Existing training data is empty")
+
+        if existing_df.empty:
+            logger.warning("No data found from /api/training/data endpoint.")
+
+        # Step 2: Optionally include feedback-labeled resumes from the joined dataset
+        logger.info("Attempting to fetch additional feedback-labeled resumes...")
+        try:
+            additional_data = get_joined_resumes_from_api()
+            logger.info(f"Raw additional data length: {len(additional_data)}")
+            additional_df = pd.DataFrame(additional_data) if additional_data else pd.DataFrame()
+            logger.info(f"Additional feedback-labeled data shape: {additional_df.shape}")
+
+            # Log more details about the additional data
+            if not additional_df.empty:
+                logger.info(f"Additional data columns: {additional_df.columns.tolist()}")
+                logger.info(f"Additional data label distribution: {additional_df['label'].value_counts().to_dict()}")
+                if len(additional_df) > 0:
+                    logger.info(f"Sample of additional data (first row): {additional_df.iloc[0].to_dict()}")
+            else:
+                logger.warning("Additional feedback-labeled data is empty")
+        except Exception as e:
+            logger.warning(f"Failed to fetch additional feedback-labeled data: {str(e)}")
+            logger.warning("Proceeding with only the existing training data.")
+            additional_df = pd.DataFrame()
+
+        # Step 3: Combine datasets and deduplicate
+        if existing_df.empty and additional_df.empty:
+            error_msg = "Both data sources returned empty datasets. No training data available."
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Combine the datasets
+        if not additional_df.empty:
+            logger.info("Combining existing and additional datasets...")
+            df = pd.concat([existing_df, additional_df], ignore_index=True)
+            logger.info(f"Combined data shape (before deduplication): {df.shape}")
+            logger.info(f"Combined data label distribution: {df['label'].value_counts().to_dict()}")
+        else:
+            logger.info("Using only existing dataset (no additional data to combine)")
+            df = existing_df
+            logger.info(f"Using existing data with shape: {df.shape}")
+
+        # Clean and validate data
+        df = df.dropna(subset=["job_description_text", "resume_text", "label"])
+        logger.info(f"Data after dropping NAs: {df.shape}")
+
+        # Define valid labels
+        def is_valid_label(label):
+            if isinstance(label, (int, float)):
+                return label in [0, 1, -1]  # 0=neutral, 1=fit, -1=no fit
+            return str(label).lower() in ["fit", "no fit", "potential fit", "neutral"]
+
+        df = df[df["label"].apply(is_valid_label)]
+        logger.info(f"Data after filtering valid labels: {df.shape}")
+
+        # Deduplicate based on job_description_text and resume_text
+        df = df.drop_duplicates(subset=["job_description_text", "resume_text"])[:10] #remove 10 after testing embeddings
+        logger.info(f"Final deduplicated training data shape: {df.shape}")
 
         if df.empty:
-            error_msg = "Empty DataFrame returned from API"
+            error_msg = "No valid training data after processing and deduplication."
             logger.error(error_msg)
             raise ValueError(error_msg)
 
@@ -169,13 +243,36 @@ def generate_and_save_embeddings(**kwargs):
         logger.info(f"Embeddings saved to {embeddings_path}")
 
         # Save metadata
+        # Log the type and values of y to help with debugging
+        logger.info(f"Label type: {type(y)}, shape: {y.shape if hasattr(y, 'shape') else 'N/A'}")
+        logger.info(f"Unique labels: {np.unique(y)}")
+
+        # Convert string labels to numeric if needed
+        numeric_y = np.zeros_like(y, dtype=int)
+        for i, label in enumerate(y):
+            if isinstance(label, str):
+                if label.lower() == 'fit':
+                    numeric_y[i] = 1
+                elif label.lower() == 'no fit':
+                    numeric_y[i] = 0
+                # Skip other labels
+            else:
+                # Assume numeric labels are already correct
+                numeric_y[i] = int(label)
+
+        # Calculate class distribution using the numeric labels
+        fit_count = int(np.sum(numeric_y == 1))
+        no_fit_count = int(np.sum(numeric_y == 0))
+
+        logger.info(f"Calculated class distribution: fit={fit_count}, no_fit={no_fit_count}")
+
         metadata = {
             'timestamp': timestamp,
             'num_samples': len(df),
             'embedding_dim': X.shape[1],
             'class_distribution': {
-                'fit': int(sum(y)),
-                'no_fit': int(len(y) - sum(y))
+                'fit': fit_count,
+                'no_fit': no_fit_count
             }
         }
 
