@@ -9,8 +9,13 @@ from resume_to_csv import resume_pre_processing
 import zipfile
 import os
 import requests
+import time
+import requests
+from google.cloud import storage
 
 API_BASE_URL = os.getenv("RESUMATRIX_API_URL", "http://localhost:8000")
+GCP_BUCKET = os.getenv("GCP_BUCKET_NAME")
+GCP_CREDENTIALS = os.getenv("GCP_SECRET_JSON_PATH")
 
 # Streamlit UI
 st.set_page_config(page_title="ResuMatrix", page_icon=":briefcase:", layout="wide")
@@ -289,39 +294,147 @@ elif st.session_state.next_page == 'resume_page':
                         st.error(f"Failed to send resumes to API: {e}")
 
 # Results Section
-elif st.session_state.next_page == 'results_page' and st.session_state.show_results:
+# elif st.session_state.next_page == 'results_page' and st.session_state.show_results:
     
+#     st.sidebar.text(f"Email: {st.session_state.useremail}")
+#     if st.sidebar.button("Sign Out"):
+#         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
+
+#     st.subheader("Best Resume Matches for the Job Description \n")
+    
+#     # Show all extracted resumes without ranking logic
+#     for filename, file_content in st.session_state.extracted_resumes:
+#         col1, col2 = st.columns([4, 1])  # Adjust column width (more space for text, less for button)
+#         with col1:
+#             st.write(f"**{filename}**")
+#         with col2:
+#             st.download_button(
+#                 label=":floppy_disk:",  
+#                 data=file_content,
+#                 file_name=filename,
+#                 mime="application/octet-stream",
+#                 key=f"download_{filename}"
+#             )
+        
+#     col_next, col_back = st.columns([2, 2])
+
+#     with col_next:
+#         if st.button("📋 Continue to Feedback"):
+#             st.session_state.next_page = "feedback_page"
+#             st.rerun()
+    
+#     with col_back:
+#         if st.button("Back to Upload Page"):
+#             st.session_state.next_page = 'dashboard_page'
+#             st.rerun()
+
+elif st.session_state.next_page == 'results_page' and st.session_state.show_results:
+
     st.sidebar.text(f"Email: {st.session_state.useremail}")
     if st.sidebar.button("Sign Out"):
         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
 
-    st.subheader("Best Resume Matches for the Job Description \n")
-    
-    # Show all extracted resumes without ranking logic
-    for filename, file_content in st.session_state.extracted_resumes:
-        col1, col2 = st.columns([4, 1])  # Adjust column width (more space for text, less for button)
-        with col1:
-            st.write(f"**{filename}**")
-        with col2:
-            st.download_button(
-                label=":floppy_disk:",  
-                data=file_content,
-                file_name=filename,
-                mime="application/octet-stream",
-                key=f"download_{filename}"
-            )
-        
-    col_next, col_back = st.columns([2, 2])
+    st.subheader("Best Resume Matches for the Job Description\n")
 
+    job_id = st.session_state.job_id
+    user_id = st.session_state.userid
+    bucket_name = GCP_BUCKET
+
+    job_api = f"{API_BASE_URL}/jobs/{job_id}"
+    resumes_api = f"{API_BASE_URL}/jobs/{job_id}/resumes"
+
+    # Polling logic
+    st.info("⏳ Waiting for resume ranking to complete...")
+    while True:
+        try:
+            job_res = requests.get(job_api)
+            resumes_res = requests.get(resumes_api)
+
+            if not job_res.ok or not resumes_res.ok:
+                st.error("Failed to fetch job/resumes info. Retrying...")
+                time.sleep(15)
+                continue
+
+            job_data = job_res.json()["job"]
+            resumes_data = resumes_res.json()["resumes"]
+
+            if job_data["user_id"] != user_id:
+                st.error("You are not authorized to view this job.")
+                st.stop()
+
+            resume_statuses = [r["status"] for r in resumes_data]
+            if all(s not in [-2, 0] for s in resume_statuses) and job_data["status"] == 1:
+                break
+
+        except Exception as e:
+            st.warning(f"Error polling APIs: {e}")
+        time.sleep(15)
+
+    st.success("🎉 Resume ranking complete!")
+
+    # Categorize and sort
+    ranked_resumes = sorted([r for r in resumes_data if r["status"] > 0], key=lambda x: x["status"])
+    unfit_resumes = [r for r in resumes_data if r["status"] == -1]
+
+    client = storage.Client.from_service_account_json(GCP_CREDENTIALS)
+    bucket = client.bucket(bucket_name)
+
+    def get_resume_file_by_id(resume_id):
+        # List all blobs in the folder
+        blobs = bucket.list_blobs(prefix=f"resumes/{job_id}/")
+        for blob in blobs:
+            file_name = blob.name.split("/")[-1]
+            if file_name.startswith(f"{resume_id}_"):
+                actual_name = file_name.split(f"{resume_id}_", 1)[1]
+                return blob.download_as_bytes(), actual_name
+        return None, None
+
+    
+    # Display Ranked Resumes
+    st.markdown("### 🎯 Ranked Resumes (Best to Least Fit)")
+    for resume in ranked_resumes:
+        resume_bytes, resume_name = get_resume_file_by_id(resume["id"])
+        if resume_bytes and resume_name:
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.write(f"**{resume_name}** - Rank: {resume['status']}")
+            with col2:
+                st.download_button(
+                    label="📄 Download",
+                    data=resume_bytes,
+                    file_name=resume_name,
+                    mime="application/pdf",
+                    key=f"download_{resume['id']}"
+                )
+
+    # Display Unfit Resumes
+    st.markdown("### ❌ Unfit Resumes")
+    for resume in unfit_resumes:
+        resume_bytes, resume_name = get_resume_file_by_id(resume["id"])
+        if resume_bytes and resume_name:
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.write(f"**{resume_name}** - Unfit")
+            with col2:
+                st.download_button(
+                    label="📄 Download",
+                    data=resume_bytes,
+                    file_name=resume_name,
+                    mime="application/pdf",
+                    key=f"download_unfit_{resume['id']}"
+                )
+
+    # Navigation
+    col_next, col_back = st.columns([2, 2])
     with col_next:
         if st.button("📋 Continue to Feedback"):
             st.session_state.next_page = "feedback_page"
             st.rerun()
-    
     with col_back:
         if st.button("Back to Upload Page"):
             st.session_state.next_page = 'dashboard_page'
             st.rerun()
+
 
 elif st.session_state.next_page == "feedback_page":
     st.sidebar.text(f"Email: {st.session_state.useremail}")
