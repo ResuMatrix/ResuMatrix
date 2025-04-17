@@ -310,7 +310,6 @@ def upload_to_gcs_bucket(**kwargs):
 
     try:
         # Import here to avoid loading at DAG definition time
-        from frontend.utils.gcp import upload_to_gcp
         from google.cloud import storage
 
         # Test GCS connection
@@ -326,12 +325,20 @@ def upload_to_gcs_bucket(**kwargs):
             # Upload embeddings file to GCS
             embeddings_blob_name = f"embeddings/{os.path.basename(embeddings_path)}"
             logger.info(f"Uploading embeddings to GCS: {embeddings_blob_name}")
-            upload_to_gcp(embeddings_path, GCS_BUCKET_NAME, embeddings_blob_name)
+
+            # Create a blob and upload the file
+            embeddings_blob = bucket.blob(embeddings_blob_name)
+            with open(embeddings_path, 'rb') as f:
+                embeddings_blob.upload_from_file(f, content_type="application/octet-stream")
 
             # Upload metadata file to GCS
             metadata_blob_name = f"metadata/{os.path.basename(metadata_path)}"
             logger.info(f"Uploading metadata to GCS: {metadata_blob_name}")
-            upload_to_gcp(metadata_path, GCS_BUCKET_NAME, metadata_blob_name)
+
+            # Create a blob and upload the file
+            metadata_blob = bucket.blob(metadata_blob_name)
+            with open(metadata_path, 'rb') as f:
+                metadata_blob.upload_from_file(f, content_type="application/json")
 
             gcs_paths = {
                 'embeddings_gcs_path': f"gs://{GCS_BUCKET_NAME}/{embeddings_blob_name}",
