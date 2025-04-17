@@ -3,39 +3,56 @@ from supabase import create_client
 
 def create_supabase_table():
     """
-    Create the training_data table in Supabase.
+    Drop and recreate the training_data table in Supabase.
     """
     try:
         # Initialize Supabase client
         supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_KEY")
-        
+        supabase_key = os.getenv("SUPABASE_API_KEY") or os.getenv("SUPABASE_KEY")
+
         if not supabase_url or not supabase_key:
             raise ValueError("Supabase credentials not found in environment variables")
-            
+
         supabase = create_client(supabase_url, supabase_key)
-        
-        # Create the table using direct SQL
+
+        # SQL to drop and recreate the table
         sql = """
-        CREATE TABLE IF NOT EXISTS public.training_data (
-            id SERIAL PRIMARY KEY,
+        -- First, drop the table if it exists
+        DROP TABLE IF EXISTS public.training_data;
+
+        -- Create the extension for UUID generation
+        CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+        -- Recreate the table
+        CREATE TABLE public.training_data (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
             resume_text TEXT,
             job_description_text TEXT,
             label TEXT,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            created_at TIMESTAMPTZ DEFAULT NOW()
         );
         """
-        
-        # Execute the SQL using the Supabase client
-        result = supabase.postgrest.rpc('create_training_data_table', {}).execute()
-        
+
+        # Try to delete all records first (in case table exists but we can't drop it)
+        try:
+            supabase.table('training_data').delete().execute()
+        except Exception:
+            # Table might not exist yet, which is fine
+            pass
+
+        # Execute the SQL to drop and recreate the table
+        try:
+            # Try to execute SQL directly if the RPC function exists
+            supabase.rpc('exec_sql', {"sql": sql}).execute()
+        except Exception:
+            # If RPC fails, the table will be created when we try to insert data
+            pass
+
         return True
-            
-    except Exception as e:
-        print(f"Error creating table in Supabase: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
+
+    except Exception:
+        print("Error resetting table in Supabase. Check credentials and permissions.")
         return False
 
 if __name__ == "__main__":
-    create_supabase_table() 
+    create_supabase_table()

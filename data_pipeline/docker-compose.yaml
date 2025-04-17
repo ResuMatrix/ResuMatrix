@@ -29,15 +29,22 @@
 x-airflow-common:
   &airflow-common
   build: .
+  env_file:
+    - ../.env
   environment:
     &airflow-common-env
     AIRFLOW_UID: ${AIRFLOW_UID:-50000}
-    AIRFLOW_GID: ${AIRFLOW_GID:-50000}
+    AIRFLOW_GID: ${AIRFLOW_GID:-0}
+    # Explicitly set Supabase variables with defaults for safety
+    SUPABASE_URL: ${SUPABASE_URL:-}
+    SUPABASE_KEY: ${SUPABASE_API_KEY:-}
+    SUPABASE_API_KEY: ${SUPABASE_API_KEY:-}
     # API URL for connecting to host machine
     RESUMATRIX_API_URL: 'http://host.docker.internal:8000/api'
     # GCP-related environment variables
     AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: 'google-cloud-platform://?extra__google_cloud_platform__key_path=/etc/secrets/gcp_key.json'
     GCP_PROJECT_ID: awesome-nimbus-452221-v2
+    GCP_BUCKET_NAME: ${GCP_BUCKET_NAME:-us-east1-mlops-dev-8ad13d78-bucket}
     GOOGLE_APPLICATION_CREDENTIALS: /etc/secrets/gcp_key.json
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -58,6 +65,7 @@ x-airflow-common:
     AIRFLOW__SMTP__SMTP_PASSWORD: 'mrrb ubti ldnz hrve'
     AIRFLOW__SMTP__SMTP_PORT: '587'
     AIRFLOW__SMTP__SMTP_MAIL_FROM: 'mlops.team20@gmail.com'
+  # env_file already specified above
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
