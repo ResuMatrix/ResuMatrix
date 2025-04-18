@@ -168,7 +168,7 @@ def fetch_and_save_training_data(**kwargs):
         def is_valid_label(label):
             if isinstance(label, (int, float)):
                 return label in [0, 1, -1]  # 0=neutral, 1=fit, -1=no fit
-            return str(label).lower() in ["fit", "no fit", "potential fit", "neutral"]
+            return str(label).lower() in ["good fit", "no fit", "potential fit", "neutral"]
 
         df = df[df["label"].apply(is_valid_label)]
         logger.info(f"Data after filtering valid labels: {df.shape}")
@@ -266,7 +266,7 @@ def generate_and_save_embeddings(**kwargs):
         train_numeric_y = np.zeros_like(y_train, dtype=int)
         for i, label in enumerate(y_train):
             if isinstance(label, str):
-                if label.lower() == 'fit':
+                if label.lower() == 'good fit':
                     train_numeric_y[i] = 1
                 elif label.lower() == 'no fit':
                     train_numeric_y[i] = 0
@@ -279,7 +279,7 @@ def generate_and_save_embeddings(**kwargs):
         test_numeric_y = np.zeros_like(y_test, dtype=int)
         for i, label in enumerate(y_test):
             if isinstance(label, str):
-                if label.lower() == 'fit':
+                if label.lower() == 'good fit':
                     test_numeric_y[i] = 1
                 elif label.lower() == 'no fit':
                     test_numeric_y[i] = 0

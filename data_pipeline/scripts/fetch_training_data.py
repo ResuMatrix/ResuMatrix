@@ -170,11 +170,11 @@ def get_joined_resumes_from_api() -> list[dict]:
                     # - If feedback_label is -1, it's a no fit
                     # - If feedback_label is 0, skip this resume
                     if feedback_label == 1:
-                        label = "fit"
+                        label = "Good Fit"
                         logger.info(f"Resume {resume_id}: feedback_label=1, labeled as 'fit'")
                         processed_count += 1
                     elif feedback_label == -1:
-                        label = "no fit"
+                        label = "No Fit"
                         logger.info(f"Resume {resume_id}: feedback_label=-1, labeled as 'no fit'")
                         processed_count += 1
                     else:
