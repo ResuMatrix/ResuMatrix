@@ -1,7 +1,5 @@
-from gotrue import Dict
-from pydantic import UUID4
 from supabase import create_client, Client
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Dict
 from app.core.config import settings
 from app.models import *
 import logging
