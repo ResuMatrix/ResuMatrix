@@ -2,17 +2,15 @@ import streamlit as st
 from io import BytesIO
 from supabase_auth import authenticate_user, register_user
 from text_extraction import extract_text_from_file
-from resume_ranker import process_resumes
 import json
 from jd_to_text import jobPosting_pre_processing
-from resume_to_csv import resume_pre_processing
+import datetime
 import zipfile
 import os
 import requests
 import time
 import requests
 from google.cloud import storage
-from pathlib import Path
 
 API_BASE_URL = os.getenv("RESUMATRIX_API_URL", "http://localhost:8000")
 GCP_BUCKET = os.getenv("GCP_BUCKET_NAME")
@@ -106,11 +104,14 @@ def login_user():
 
 # Main flow
 if st.session_state.signout:
-    st.text('Name: ' + st.session_state.username)
-    st.text('Email id: ' + st.session_state.useremail)
-    st.button('Sign out', on_click=lambda: st.session_state.update({
-        "signout": False, "signedout": False, "username": "", "useremail": "", "userid": ""
-    }))
+    top_left, top_spacer, top_right = st.columns([2, 6, 2])
+    with top_left:
+        st.markdown(f"**Name:** {st.session_state.username}")
+        st.markdown(f"**Email:** {st.session_state.useremail}")
+    with top_right:
+        st.button(' Sign Out ', on_click=lambda: st.session_state.update({
+            "signout": False, "signedout": False, "username": "", "useremail": "", "userid": ""
+        }))
 
 # Authentication Page
 if not st.session_state["signedout"]:  # Only show if the state is False
@@ -135,6 +136,7 @@ elif st.session_state.next_page == 'dashboard_page':
     # Dashboard Page
     st.sidebar.title(f"Welcome, {st.session_state.username}!")
     st.sidebar.text(f"Email: {st.session_state.useremail}")
+    st.sidebar.text(f"Date: {datetime.date.today().strftime('%B %d, %Y')}")
     if st.sidebar.button("Sign Out"):
         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
 
@@ -216,8 +218,9 @@ elif st.session_state.next_page == 'dashboard_page':
 
                 if "job_description" in st.session_state and "userid" in st.session_state:
                     api_url = f"{API_BASE_URL}/jobs/"
+
                     payload = {
-                        "job_text": st.session_state.job_description,
+                        "job_text": st.session_state.processed_job_text,
                         "user_id": st.session_state.userid  # Supabase Auth User ID
                     }
 
@@ -235,8 +238,9 @@ elif st.session_state.next_page == 'dashboard_page':
 
 elif st.session_state.next_page == 'resume_page':
 
-    st.sidebar.title(f"Welcome, {st.session_state.username}!")
     st.sidebar.text(f"Email: {st.session_state.useremail}")
+    st.sidebar.text(f"Username: {st.session_state.username}")
+    st.sidebar.text(f"Date: {datetime.date.today().strftime('%B %d, %Y')}")
     if st.sidebar.button("Sign Out"):
         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
 
@@ -293,48 +297,15 @@ elif st.session_state.next_page == 'resume_page':
                     except Exception as e:
                         st.error(f"Failed to send resumes to API: {e}")
 
-# Results Section
-# elif st.session_state.next_page == 'results_page' and st.session_state.show_results:
-    
-#     st.sidebar.text(f"Email: {st.session_state.useremail}")
-#     if st.sidebar.button("Sign Out"):
-#         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
-
-#     st.subheader("Best Resume Matches for the Job Description \n")
-    
-#     # Show all extracted resumes without ranking logic
-#     for filename, file_content in st.session_state.extracted_resumes:
-#         col1, col2 = st.columns([4, 1])  # Adjust column width (more space for text, less for button)
-#         with col1:
-#             st.write(f"**{filename}**")
-#         with col2:
-#             st.download_button(
-#                 label=":floppy_disk:",  
-#                 data=file_content,
-#                 file_name=filename,
-#                 mime="application/octet-stream",
-#                 key=f"download_{filename}"
-#             )
-        
-#     col_next, col_back = st.columns([2, 2])
-
-#     with col_next:
-#         if st.button("📋 Continue to Feedback"):
-#             st.session_state.next_page = "feedback_page"
-#             st.rerun()
-    
-#     with col_back:
-#         if st.button("Back to Upload Page"):
-#             st.session_state.next_page = 'dashboard_page'
-#             st.rerun()
-
 elif st.session_state.next_page == 'results_page' and st.session_state.show_results:
 
     st.sidebar.text(f"Email: {st.session_state.useremail}")
+    st.sidebar.text(f"Username: {st.session_state.username}")
+    st.sidebar.text(f"Date: {datetime.date.today().strftime('%B %d, %Y')}")
     if st.sidebar.button("Sign Out"):
         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
 
-    st.subheader("Best Resume Matches for the Job Description\n")
+    st.markdown("# Best Resume Matches for the Job Description")
 
     job_id = st.session_state.job_id
     user_id = st.session_state.userid
@@ -344,7 +315,8 @@ elif st.session_state.next_page == 'results_page' and st.session_state.show_resu
     resumes_api = f"{API_BASE_URL}/jobs/{job_id}/resumes"
 
     # Polling logic
-    st.info("⏳ Waiting for resume ranking to complete...")
+    status_placeholder = st.empty()
+    status_placeholder.info("⏳ Waiting for resume ranking to complete...")
     while True:
         try:
             job_res = requests.get(job_api)
@@ -370,7 +342,8 @@ elif st.session_state.next_page == 'results_page' and st.session_state.show_resu
             st.warning(f"Error polling APIs: {e}")
         time.sleep(15)
 
-    st.success("🎉 Resume ranking complete!")
+    status_placeholder.empty()    
+    st.success("Resume ranking complete!")
 
     # Categorize and sort
     ranked_resumes = sorted([r for r in resumes_data if r["status"] > 0], key=lambda x: x["status"])
@@ -387,18 +360,28 @@ elif st.session_state.next_page == 'results_page' and st.session_state.show_resu
             if file_name.startswith(f"{resume_id}_"):
                 actual_name = file_name.split(f"{resume_id}_", 1)[1]
                 return blob.download_as_bytes(), actual_name
-        return None, None
+        return None, None 
 
-    
-    # Display Ranked Resumes
-    st.markdown("### 🎯 Ranked Resumes (Best to Least Fit)")
+
+    # Display table headers
+    col_name, col_rank, col_download = st.columns([4, 1, 2])
+    with col_name:
+        st.markdown("### **Resume Name**")
+    with col_rank:
+        st.markdown("### **Label**")
+    with col_download:
+        st.markdown("### **Download**")
+
+    # Display each resume row
     for resume in ranked_resumes:
         resume_bytes, resume_name = get_resume_file_by_id(resume["id"])
         if resume_bytes and resume_name:
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                st.write(f"**{resume_name}** - Rank: {resume['status']}")
-            with col2:
+            col_name, col_rank, col_download = st.columns([4, 1, 2])
+            with col_name:
+                st.markdown(resume_name)
+            with col_rank:
+                st.markdown(f"Rank: {resume['status']}")
+            with col_download:
                 st.download_button(
                     label="📄 Download",
                     data=resume_bytes,
@@ -408,14 +391,26 @@ elif st.session_state.next_page == 'results_page' and st.session_state.show_resu
                 )
 
     # Display Unfit Resumes
-    st.markdown("### ❌ Unfit Resumes")
+    st.markdown("# Unfit Resumes")
+
+    # Display table headers
+    col_name, col_rank, col_download = st.columns([4, 1, 2])
+    with col_name:
+        st.markdown("### **Resume Name**")
+    with col_rank:
+        st.markdown("### **Label**")
+    with col_download:
+        st.markdown("### **Download**")
+
     for resume in unfit_resumes:
         resume_bytes, resume_name = get_resume_file_by_id(resume["id"])
         if resume_bytes and resume_name:
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                st.write(f"**{resume_name}** - Unfit")
-            with col2:
+            col_name, col_rank, col_download = st.columns([4, 1, 2])
+            with col_name:
+                st.markdown(resume_name)
+            with col_rank:
+                st.markdown("Unfit")
+            with col_download:
                 st.download_button(
                     label="📄 Download",
                     data=resume_bytes,
@@ -438,11 +433,13 @@ elif st.session_state.next_page == 'results_page' and st.session_state.show_resu
 
 elif st.session_state.next_page == "feedback_page":
     st.sidebar.text(f"Email: {st.session_state.useremail}")
+    st.sidebar.text(f"Username: {st.session_state.username}")
+    st.sidebar.text(f"Date: {datetime.date.today().strftime('%B %d, %Y')}")
     if st.sidebar.button("Sign Out"):
         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
 
     st.sidebar.title(f"Thanks for visiting, {st.session_state.username}!")
-    st.title("📋 We value your feedback")
+    st.title(" We value your feedback")
 
     st.markdown("Please rate your experience with Resumatrix \n")
 
