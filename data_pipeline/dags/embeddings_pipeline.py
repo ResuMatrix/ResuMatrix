@@ -52,8 +52,8 @@ default_args = {
     'email': ['mlops.team20@gmail.com'],
 }
 
-# Define GCS bucket name
-GCS_BUCKET_NAME = 'resumatrix-embeddings'  # Replace with your actual bucket name
+# Define GCS bucket name from environment variable
+GCS_BUCKET_NAME = os.environ.get('GCP_BUCKET_NAME', 'resumatrix-embeddings')
 
 # Define task functions
 def fetch_and_save_training_data(**kwargs):
