@@ -1,5 +1,7 @@
+from gotrue import Dict
+from pydantic import UUID4
 from supabase import create_client, Client
-from typing import List, Optional
+from typing import Any, List, Optional
 from app.core.config import settings
 from app.models import *
 import logging
@@ -137,16 +139,16 @@ class DatabaseService:
             raise
 
 
-    async def update_resume_status(self, resume_id, status: int) -> Optional[str]:
-        """update the status of the resume"""
+    async def update_resumes_with_job_id(self, job_id: str, resumes: List[Dict[str, Any]]) -> Optional[List[Resume]]:
+        """update the resumes based on job_id"""
+        updated_res = []
         try:
-            result = self.client.table("resumes").insert({
-                "id": resume_id,
-                "status": status
-                }).execute()
-            return result.data[0].id
+            for resume in resumes:
+                result = self.client.table("resumes").update(resume).eq("id", resume["id"]).execute()
+                updated_res.append(result.data[0])
+            return ResumeList.model_validate({"resume_list": updated_res}).resume_list
         except Exception as e:
-            logger.error(f"Error updating resume status: {str(e)}")
+            logger.error(f"Error updating resumes: {str(e)}")
             raise
 
     # TrainingData CRUD

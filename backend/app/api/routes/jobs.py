@@ -70,6 +70,25 @@ async def get_all_resumes_with_job_id(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
+@router.put("/{job_id}/resumes", status_code=200)
+async def update_resumes_with_job_id(
+        job_id: str,
+        data: dict = Body(...),
+        db_service:DatabaseService = Depends(get_db_service)):
+    try:
+        if "resumes" not in data:
+            raise HTTPException(status_code=400, detail=f"Missing json value resumes from request body")
+        resume_list = data["resumes"]
+        resumes = await db_service.update_resumes_with_job_id(job_id, resume_list)
+
+        if resumes is not None:
+            return JSONResponse(content={"resumes" : jsonable_encoder(resumes)})
+        LOG.warning(f"No resumes were updated for job_id: {job_id}")
+        raise HTTPException(status_code=422, detail=f"No resumes were updated for job_id: {job_id}")
+                    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
 
 @router.get("/{job_id}/resumes/{resume_id}", status_code=200)
 async def get_resume_with_id(
