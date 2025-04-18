@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 def load_embeddings(file_path):
     """Load embeddings from a .npz file."""
     try:
-        data = np.load(file_path)
+        data = np.load(file_path,allow_pickle=True)
         X = data['X']
         y = data['y']
         return X, y

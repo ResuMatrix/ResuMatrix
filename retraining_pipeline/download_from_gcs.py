@@ -10,7 +10,11 @@ import logging
 from datetime import datetime
 from google.cloud import storage
 import numpy as np
+from dotenv import load_dotenv
 
+# Load the .env file from the parent directory
+dotenv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
+load_dotenv(dotenv_path)
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -78,7 +82,7 @@ def download_latest_embeddings(bucket_name, output_dir="data"):
     latest_test_blob = test_blobs[0]
 
     # Get the latest metadata
-    metadata_blobs = list_blobs_with_prefix(bucket_name, "embeddings/metadata_")
+    metadata_blobs = list_blobs_with_prefix(bucket_name, "metadata/metadata_")
     if not metadata_blobs:
         logger.error("No metadata found in the bucket")
         return None
