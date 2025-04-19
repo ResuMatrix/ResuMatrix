@@ -52,8 +52,8 @@ default_args = {
     'email': ['mlops.team20@gmail.com'],
 }
 
-# Define GCS bucket name
-GCS_BUCKET_NAME = 'resumatrix-embeddings'  # Replace with your actual bucket name
+# Define GCS bucket name from environment variable
+GCS_BUCKET_NAME = os.environ.get('GCP_BUCKET_NAME', 'resumatrix-embeddings')
 
 # Define task functions
 def fetch_and_save_training_data(**kwargs):
@@ -66,7 +66,7 @@ def fetch_and_save_training_data(**kwargs):
     """
     try:
         # Import here to avoid loading at DAG definition time
-        from scripts.fetch_training_data import fetch_training_data, save_training_data
+        from scripts.fetch_training_data import save_training_data
         import pandas as pd
         import os
         import socket
@@ -99,12 +99,86 @@ def fetch_and_save_training_data(**kwargs):
         except requests.exceptions.RequestException as conn_error:
             logger.error(f"API connection test failed: {str(conn_error)}")
 
-        # Fetch the actual training data
+        # Fetch the training data using the updated logic
         logger.info("Fetching training data from API...")
-        df = fetch_training_data()
+
+        # Import the specific functions we need
+        from scripts.fetch_training_data import fetch_existing_training_data, get_joined_resumes_from_api
+
+        # Step 1: Always use the existing training dataset from /api/training/data as the base
+        logger.info("Fetching existing training data from /api/training/data endpoint...")
+        existing_df = fetch_existing_training_data()
+        logger.info(f"Existing training data shape: {existing_df.shape}")
+
+        # Log more details about the existing data
+        if not existing_df.empty:
+            logger.info(f"Existing data columns: {existing_df.columns.tolist()}")
+            logger.info(f"Existing data label distribution: {existing_df['label'].value_counts().to_dict()}")
+            if len(existing_df) > 0:
+                logger.info(f"Sample of existing data (first row): {existing_df.iloc[0].to_dict()}")
+        else:
+            logger.warning("Existing training data is empty")
+
+        if existing_df.empty:
+            logger.warning("No data found from /api/training/data endpoint.")
+
+        # Step 2: Optionally include feedback-labeled resumes from the joined dataset
+        logger.info("Attempting to fetch additional feedback-labeled resumes...")
+        try:
+            additional_data = get_joined_resumes_from_api()
+            logger.info(f"Raw additional data length: {len(additional_data)}")
+            additional_df = pd.DataFrame(additional_data) if additional_data else pd.DataFrame()
+            logger.info(f"Additional feedback-labeled data shape: {additional_df.shape}")
+
+            # Log more details about the additional data
+            if not additional_df.empty:
+                logger.info(f"Additional data columns: {additional_df.columns.tolist()}")
+                logger.info(f"Additional data label distribution: {additional_df['label'].value_counts().to_dict()}")
+                if len(additional_df) > 0:
+                    logger.info(f"Sample of additional data (first row): {additional_df.iloc[0].to_dict()}")
+            else:
+                logger.warning("Additional feedback-labeled data is empty")
+        except Exception as e:
+            logger.warning(f"Failed to fetch additional feedback-labeled data: {str(e)}")
+            logger.warning("Proceeding with only the existing training data.")
+            additional_df = pd.DataFrame()
+
+        # Step 3: Combine datasets and deduplicate
+        if existing_df.empty and additional_df.empty:
+            error_msg = "Both data sources returned empty datasets. No training data available."
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Combine the datasets
+        if not additional_df.empty:
+            logger.info("Combining existing and additional datasets...")
+            df = pd.concat([existing_df, additional_df], ignore_index=True)
+            logger.info(f"Combined data shape (before deduplication): {df.shape}")
+            logger.info(f"Combined data label distribution: {df['label'].value_counts().to_dict()}")
+        else:
+            logger.info("Using only existing dataset (no additional data to combine)")
+            df = existing_df
+            logger.info(f"Using existing data with shape: {df.shape}")
+
+        # Clean and validate data
+        df = df.dropna(subset=["job_description_text", "resume_text", "label"])
+        logger.info(f"Data after dropping NAs: {df.shape}")
+
+        # Define valid labels
+        def is_valid_label(label):
+            if isinstance(label, (int, float)):
+                return label in [0, 1, -1]  # 0=neutral, 1=fit, -1=no fit
+            return str(label).lower() in ["good fit", "no fit", "potential fit", "neutral"]
+
+        df = df[df["label"].apply(is_valid_label)]
+        logger.info(f"Data after filtering valid labels: {df.shape}")
+
+        # Deduplicate based on job_description_text and resume_text
+        df = df.drop_duplicates(subset=["job_description_text", "resume_text"])[:10] #remove 10 after testing embeddings
+        logger.info(f"Final deduplicated training data shape: {df.shape}")
 
         if df.empty:
-            error_msg = "Empty DataFrame returned from API"
+            error_msg = "No valid training data after processing and deduplication."
             logger.error(error_msg)
             raise ValueError(error_msg)
 
@@ -131,7 +205,7 @@ def fetch_and_save_training_data(**kwargs):
 
 def generate_and_save_embeddings(**kwargs):
     """
-    Generate embeddings from the training data and save them locally.
+    Generate embeddings from the training data, split into train/test sets, and save them locally.
 
     Returns:
         dict: Paths to the saved embeddings and metadata files
@@ -139,6 +213,7 @@ def generate_and_save_embeddings(**kwargs):
     try:
         # Import here to avoid loading at DAG definition time
         from src.data_processing.data_preprocessing import extract_embeddings, clean_text
+        from sklearn.model_selection import train_test_split
 
         # Get the training data path from XCom
         ti = kwargs['ti']
@@ -153,29 +228,91 @@ def generate_and_save_embeddings(**kwargs):
             df['resume_text'] = df['resume_text'].apply(clean_text)
             df['job_description_text'] = df['job_description_text'].apply(clean_text)
 
-        # Generate embeddings
-        logger.info("Generating embeddings...")
-        X, y = extract_embeddings(df, data_type="train")
+        # Split the data into train (80%) and test (20%) sets
+        logger.info("Splitting data into train and test sets (80/20 split)...")
+        train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
+        logger.info(f"Train set shape: {train_df.shape}, Test set shape: {test_df.shape}")
 
         # Create directory for embeddings if it doesn't exist
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         embeddings_dir = '/opt/airflow/data/embeddings'
         os.makedirs(embeddings_dir, exist_ok=True)
 
-        # Save embeddings to a local file
-        embeddings_path = f"{embeddings_dir}/embeddings_{timestamp}.npz"
-        np.savez(embeddings_path, X=X, y=y)
+        # Process train set
+        logger.info("Generating embeddings for train set...")
+        X_train, y_train = extract_embeddings(train_df, data_type="train")
 
-        logger.info(f"Embeddings saved to {embeddings_path}")
+        # Process test set
+        logger.info("Generating embeddings for test set...")
+        X_test, y_test = extract_embeddings(test_df, data_type="train")
+
+        # Save train embeddings to a local file
+        train_embeddings_path = f"{embeddings_dir}/train_embeddings_{timestamp}.npz"
+        np.savez(train_embeddings_path, X=X_train, y=y_train)
+        logger.info(f"Train embeddings saved to {train_embeddings_path}")
+
+        # Save test embeddings to a local file
+        test_embeddings_path = f"{embeddings_dir}/test_embeddings_{timestamp}.npz"
+        np.savez(test_embeddings_path, X=X_test, y=y_test)
+        logger.info(f"Test embeddings saved to {test_embeddings_path}")
+
+        # Log the type and values of labels to help with debugging
+        logger.info(f"Train labels type: {type(y_train)}, shape: {y_train.shape if hasattr(y_train, 'shape') else 'N/A'}")
+        logger.info(f"Train unique labels: {np.unique(y_train)}")
+        logger.info(f"Test labels type: {type(y_test)}, shape: {y_test.shape if hasattr(y_test, 'shape') else 'N/A'}")
+        logger.info(f"Test unique labels: {np.unique(y_test)}")
+
+        # Convert string labels to numeric if needed (for train set)
+        train_numeric_y = np.zeros_like(y_train, dtype=int)
+        for i, label in enumerate(y_train):
+            if isinstance(label, str):
+                if label.lower() == 'good fit':
+                    train_numeric_y[i] = 1
+                elif label.lower() == 'no fit':
+                    train_numeric_y[i] = 0
+                # Skip other labels
+            else:
+                # Assume numeric labels are already correct
+                train_numeric_y[i] = int(label)
+
+        # Convert string labels to numeric if needed (for test set)
+        test_numeric_y = np.zeros_like(y_test, dtype=int)
+        for i, label in enumerate(y_test):
+            if isinstance(label, str):
+                if label.lower() == 'good fit':
+                    test_numeric_y[i] = 1
+                elif label.lower() == 'no fit':
+                    test_numeric_y[i] = 0
+                # Skip other labels
+            else:
+                # Assume numeric labels are already correct
+                test_numeric_y[i] = int(label)
+
+        # Calculate class distribution for train set
+        train_fit_count = int(np.sum(train_numeric_y == 1))
+        train_no_fit_count = int(np.sum(train_numeric_y == 0))
+
+        # Calculate class distribution for test set
+        test_fit_count = int(np.sum(test_numeric_y == 1))
+        test_no_fit_count = int(np.sum(test_numeric_y == 0))
+
+        logger.info(f"Train set class distribution: fit={train_fit_count}, no_fit={train_no_fit_count}")
+        logger.info(f"Test set class distribution: fit={test_fit_count}, no_fit={test_no_fit_count}")
 
         # Save metadata
         metadata = {
             'timestamp': timestamp,
-            'num_samples': len(df),
-            'embedding_dim': X.shape[1],
-            'class_distribution': {
-                'fit': int(sum(y)),
-                'no_fit': int(len(y) - sum(y))
+            'total_samples': len(df),
+            'train_samples': len(train_df),
+            'test_samples': len(test_df),
+            'embedding_dim': X_train.shape[1],
+            'train_class_distribution': {
+                'fit': train_fit_count,
+                'no_fit': train_no_fit_count
+            },
+            'test_class_distribution': {
+                'fit': test_fit_count,
+                'no_fit': test_no_fit_count
             }
         }
 
@@ -186,11 +323,13 @@ def generate_and_save_embeddings(**kwargs):
         logger.info(f"Metadata saved to {metadata_path}")
 
         # Push the paths to XCom for the next task
-        ti.xcom_push(key='embeddings_path', value=embeddings_path)
+        ti.xcom_push(key='train_embeddings_path', value=train_embeddings_path)
+        ti.xcom_push(key='test_embeddings_path', value=test_embeddings_path)
         ti.xcom_push(key='metadata_path', value=metadata_path)
 
         return {
-            'embeddings_path': embeddings_path,
+            'train_embeddings_path': train_embeddings_path,
+            'test_embeddings_path': test_embeddings_path,
             'metadata_path': metadata_path
         }
 
@@ -200,7 +339,7 @@ def generate_and_save_embeddings(**kwargs):
 
 def upload_to_gcs_bucket(**kwargs):
     """
-    Upload embeddings and metadata files to Google Cloud Storage.
+    Upload train/test embeddings and metadata files to Google Cloud Storage.
     If GCS upload fails, save files locally and log the paths.
 
     Returns:
@@ -208,12 +347,12 @@ def upload_to_gcs_bucket(**kwargs):
     """
     # Get the file paths from XCom
     ti = kwargs['ti']
-    embeddings_path = ti.xcom_pull(task_ids='generate_embeddings_task', key='embeddings_path')
+    train_embeddings_path = ti.xcom_pull(task_ids='generate_embeddings_task', key='train_embeddings_path')
+    test_embeddings_path = ti.xcom_pull(task_ids='generate_embeddings_task', key='test_embeddings_path')
     metadata_path = ti.xcom_pull(task_ids='generate_embeddings_task', key='metadata_path')
 
     try:
         # Import here to avoid loading at DAG definition time
-        from frontend.utils.gcp import upload_to_gcp
         from google.cloud import storage
 
         # Test GCS connection
@@ -226,18 +365,36 @@ def upload_to_gcs_bucket(**kwargs):
                 logger.warning(f"Bucket {GCS_BUCKET_NAME} does not exist. Will create it.")
                 bucket = client.create_bucket(GCS_BUCKET_NAME)
 
-            # Upload embeddings file to GCS
-            embeddings_blob_name = f"embeddings/{os.path.basename(embeddings_path)}"
-            logger.info(f"Uploading embeddings to GCS: {embeddings_blob_name}")
-            upload_to_gcp(embeddings_path, GCS_BUCKET_NAME, embeddings_blob_name)
+            # Upload train embeddings file to GCS
+            train_blob_name = f"embeddings/{os.path.basename(train_embeddings_path)}"
+            logger.info(f"Uploading train embeddings to GCS: {train_blob_name}")
+
+            # Create a blob and upload the file
+            train_blob = bucket.blob(train_blob_name)
+            with open(train_embeddings_path, 'rb') as f:
+                train_blob.upload_from_file(f, content_type="application/octet-stream")
+
+            # Upload test embeddings file to GCS
+            test_blob_name = f"embeddings/{os.path.basename(test_embeddings_path)}"
+            logger.info(f"Uploading test embeddings to GCS: {test_blob_name}")
+
+            # Create a blob and upload the file
+            test_blob = bucket.blob(test_blob_name)
+            with open(test_embeddings_path, 'rb') as f:
+                test_blob.upload_from_file(f, content_type="application/octet-stream")
 
             # Upload metadata file to GCS
             metadata_blob_name = f"metadata/{os.path.basename(metadata_path)}"
             logger.info(f"Uploading metadata to GCS: {metadata_blob_name}")
-            upload_to_gcp(metadata_path, GCS_BUCKET_NAME, metadata_blob_name)
+
+            # Create a blob and upload the file
+            metadata_blob = bucket.blob(metadata_blob_name)
+            with open(metadata_path, 'rb') as f:
+                metadata_blob.upload_from_file(f, content_type="application/json")
 
             gcs_paths = {
-                'embeddings_gcs_path': f"gs://{GCS_BUCKET_NAME}/{embeddings_blob_name}",
+                'train_embeddings_gcs_path': f"gs://{GCS_BUCKET_NAME}/{train_blob_name}",
+                'test_embeddings_gcs_path': f"gs://{GCS_BUCKET_NAME}/{test_blob_name}",
                 'metadata_gcs_path': f"gs://{GCS_BUCKET_NAME}/{metadata_blob_name}"
             }
 
@@ -254,7 +411,8 @@ def upload_to_gcs_bucket(**kwargs):
 
         # Return local paths instead
         local_paths = {
-            'embeddings_local_path': embeddings_path,
+            'train_embeddings_local_path': train_embeddings_path,
+            'test_embeddings_local_path': test_embeddings_path,
             'metadata_local_path': metadata_path
         }
 

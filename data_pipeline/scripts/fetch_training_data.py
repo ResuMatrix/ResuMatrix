@@ -86,94 +86,133 @@ def check_api_connection():
 
 def get_joined_resumes_from_api() -> list[dict]:
     try:
-        logger.info(f"Fetching jobs from ResuMatrix API at {API_BASE_URL}...")
+        logger.info(f"Fetching jobs data from API at {API_BASE_URL}...")
+
+        # Get all jobs - no need for user_id to get all jobs
+        logger.info(f"Requesting jobs from: {API_BASE_URL}/jobs/")
         jobs_response = requests.get(f"{API_BASE_URL}/jobs/", timeout=10)
+        logger.info(f"Jobs response status code: {jobs_response.status_code}")
+        try:
+            logger.info(f"Jobs response headers: {jobs_response.headers}")
+            logger.info(f"Jobs response content (first 500 chars): {jobs_response.text[:500]}...")
+        except Exception as e:
+            logger.warning(f"Could not log response details: {e}")
+
+        # Handle the specific case where the API returns 500 but the error is "No jobs found"
+        if jobs_response.status_code == 500:
+            try:
+                error_data = jobs_response.json()
+                if isinstance(error_data, dict) and "detail" in error_data:
+                    error_message = error_data["detail"]
+                    if "No jobs found" in error_message:
+                        logger.warning("API returned 500 with 'No jobs found' message. Treating as empty jobs list.")
+                        return []
+            except Exception:
+                # If we can't parse the error, just continue with the normal flow
+                pass
+
+        # For all other cases, raise for status as usual
         jobs_response.raise_for_status()
+        jobs = jobs_response.json()
 
-        # Extract the jobs list from the response
-        response_data = jobs_response.json()
-        if isinstance(response_data, dict) and "jobs" in response_data:
-            jobs = response_data["jobs"]
-        else:
-            jobs = response_data  # Fallback if response is already a list
+        # Handle different response formats
+        if isinstance(jobs, dict) and "jobs" in jobs:
+            jobs = jobs["jobs"]
 
-        logger.info(f"Retrieved {len(jobs)} jobs.")
-
-        joined_count = 0
+        logger.info(f"Retrieved {len(jobs)} jobs")
         result = []
 
         for job in jobs:
             job_id = job.get("id")
-            job_text = job.get("job_text", "")
+            job_text = job.get("job_description", "") or job.get("job_text", "")
             if not job_id or not job_text:
                 logger.warning(f"Skipping job with missing id or text: {job}")
                 continue
 
             logger.info(f"Processing job ID: {job_id}")
             resumes_url = f"{API_BASE_URL}/jobs/{job_id}/resumes"
+            logger.info(f"Requesting resumes from: {resumes_url}")
             resumes_response = requests.get(resumes_url, timeout=10)
+            logger.info(f"Resumes response status code: {resumes_response.status_code}")
+            try:
+                logger.info(f"Resumes response headers: {resumes_response.headers}")
+                logger.info(f"Resumes response content (first 500 chars): {resumes_response.text[:500]}...")
+            except Exception as e:
+                logger.warning(f"Could not log resumes response details: {e}")
 
             if resumes_response.status_code == 200:
-                response_data = resumes_response.json()
+                resumes = resumes_response.json()
+                if isinstance(resumes, dict) and "resumes" in resumes:
+                    resumes = resumes["resumes"]
 
-                # Extract resumes and job_text from the response
-                if isinstance(response_data, dict):
-                    if "resumes" in response_data:
-                        resumes = response_data["resumes"]
-                        # If job_text is in the response, use it (it might be more up-to-date)
-                        if "job_text" in response_data:
-                            job_text = response_data["job_text"]
-                    else:
-                        logger.warning(f"No 'resumes' key in response for job_id {job_id}")
+                logger.info(f"Retrieved {len(resumes)} resumes for job {job_id}")
+
+                resume_count = 0
+                processed_count = 0
+                skipped_count = 0
+
+                for resume in resumes:
+                    resume_count += 1
+                    # Get the feedback label
+                    feedback_label = resume.get("feedback_label")
+                    resume_id = resume.get("id", "unknown")
+
+                    logger.info(f"Processing resume {resume_count}/{len(resumes)}, ID: {resume_id}, feedback_label: {feedback_label}")
+
+                    # Skip if no feedback label
+                    if feedback_label is None:
+                        logger.info(f"Skipping resume {resume_id}: No feedback label")
+                        skipped_count += 1
                         continue
-                else:
-                    resumes = response_data  # Fallback if response is already a list
 
-                logger.info(f"Retrieved {len(resumes)} resumes for job ID {job_id}")
-            else:
-                logger.warning(f"Failed to get resumes for job_id {job_id}: {resumes_response.status_code}")
-                continue
+                    # Apply the specified logic:
+                    # - If feedback_label is 1, it's a fit
+                    # - If feedback_label is -1, it's a no fit
+                    # - If feedback_label is 0, skip this resume
+                    if feedback_label == 1:
+                        label = "Good Fit"
+                        logger.info(f"Resume {resume_id}: feedback_label=1, labeled as 'fit'")
+                        processed_count += 1
+                    elif feedback_label == -1:
+                        label = "No Fit"
+                        logger.info(f"Resume {resume_id}: feedback_label=-1, labeled as 'no fit'")
+                        processed_count += 1
+                    else:
+                        # Skip resumes with feedback_label = 0 or any other value
+                        logger.info(f"Skipping resume {resume_id}: feedback_label={feedback_label} (not 1 or -1)")
+                        skipped_count += 1
+                        continue
 
-            resume_count = 0
-            for resume in resumes:
-                # Check if this resume has feedback
-                if resume.get("feedback_label") != 1:
-                    continue
+                    # Add the resume-job pair to the result list
+                    result.append({
+                        "job_description_text": job_text,
+                        "resume_text": resume.get("resume_text", ""),
+                        "label": label
+                    })
 
-                status = resume.get("status")
-                if status == 1:
-                    label = "fit"
-                elif status == 0:
-                    label = "no fit"
-                else:
-                    continue
+                # Log summary after processing all resumes for this job
+                logger.info(f"Resume processing summary for job {job_id}: Total={resume_count}, Processed={processed_count}, Skipped={skipped_count}")
 
-                result.append({
-                    "job_description_text": job_text,
-                    "resume_text": resume.get("resume_text", ""),
-                    "label": label
-                })
-                joined_count += 1
-                resume_count += 1
-
-            logger.info(f"Added {resume_count} matching resumes for job ID {job_id}")
-
-        logger.info(f"Joined {joined_count} resume-job pairs from API.")
-        if not result:
-            logger.warning("No matching resume-job pairs found.")
+        logger.info(f"Total feedback records found: {len(result)}")
         return result
 
     except requests.RequestException as e:
         logger.error(f"API request error: {e}")
-        import traceback
-        logger.error(f"Detailed traceback: {traceback.format_exc()}")
         raise
 
 
 def fetch_existing_training_data() -> pd.DataFrame:
     try:
         logger.info("Fetching existing training data from /api/training/data")
-        response = requests.get(f"{API_BASE_URL}/training/data", timeout=10)
+        training_url = f"{API_BASE_URL}/training/data"
+        logger.info(f"Requesting training data from: {training_url}")
+        response = requests.get(training_url, timeout=10)
+        logger.info(f"Training data response status code: {response.status_code}")
+        try:
+            logger.info(f"Training data response headers: {response.headers}")
+            logger.info(f"Training data response content (first 500 chars): {response.text[:500]}...")
+        except Exception as e:
+            logger.warning(f"Could not log training data response details: {e}")
         response.raise_for_status()
 
         # Parse the response
@@ -226,54 +265,65 @@ def fetch_training_data() -> pd.DataFrame:
     try:
         logger.info("Starting training data fetch process...")
 
-        # First check if the API is reachable
-        if not check_api_connection():
-            logger.error("API connection check failed. Cannot proceed with fetching training data.")
-            raise ConnectionError("Cannot connect to the API. Please check if the backend API is running and accessible.")
-
-        logger.info("API connection check passed. Proceeding with data fetch...")
-        logger.info("Fetching initial and new training data...")
-
-        # Fetch existing training data
+        # First get the existing training data (this should always be available)
         existing_df = fetch_existing_training_data()
         logger.info(f"Existing training data shape: {existing_df.shape}")
 
-        # Fetch new training data
-        new_data = get_joined_resumes_from_api()
-        new_df = pd.DataFrame(new_data)
-        logger.info(f"New joined resume-job data shape: {new_df.shape}")
+        # Then try to get new feedback data (this is optional)
+        try:
+            if check_api_connection():  # Only try if API is reachable
+                new_data = get_joined_resumes_from_api()
+                new_df = pd.DataFrame(new_data) if new_data else pd.DataFrame()
+                logger.info(f"New feedback data shape: {new_df.shape}")
 
-        # Define valid labels
-        def is_valid_label(label): return label in ["fit", "no fit", "potential fit"]
+                # Only proceed with combining if we got new data
+                if not new_df.empty:
+                    logger.info("New feedback data is not empty, proceeding with combining datasets")
+                    logger.info(f"Existing data columns: {existing_df.columns.tolist()}")
+                    logger.info(f"New data columns: {new_df.columns.tolist()}")
 
-        # Combine datasets
-        all_data = pd.concat([existing_df, new_df], ignore_index=True)
-        logger.info(f"Combined data shape: {all_data.shape}")
+                    # Log sample of new data
+                    if len(new_df) > 0:
+                        logger.info(f"Sample of new data (first row): {new_df.iloc[0].to_dict()}")
 
-        # Clean and validate data
-        valid_data = all_data.dropna(subset=["job_description_text", "resume_text", "label"])
-        logger.info(f"Data after dropping NAs: {valid_data.shape}")
+                    # Combine datasets
+                    all_data = pd.concat([existing_df, new_df], ignore_index=True)
+                    logger.info(f"Combined data shape: {all_data.shape}")
 
-        valid_data = valid_data[valid_data["label"].apply(is_valid_label)]
-        logger.info(f"Data after filtering valid labels: {valid_data.shape}")
+                    # Clean and validate the combined data
+                    valid_data = all_data.dropna(subset=["job_description_text", "resume_text", "label"])
+                    logger.info(f"Data after dropping NAs: {valid_data.shape}")
 
-        # Remove duplicates
-        deduped_data = valid_data.drop_duplicates(subset=["job_description_text", "resume_text"])
-        logger.info(f"Final deduplicated training data shape: {deduped_data.shape}")
+                    # Define valid labels (including numeric values)
+                    def is_valid_label(label):
+                        if isinstance(label, (int, float)):
+                            return label in [0, 1, -1]  # 0=neutral, 1=fit, -1=no fit
+                        return str(label).lower() in ["fit", "no fit", "potential fit", "neutral"]
 
-        if deduped_data.empty:
-            logger.warning("No valid training data found after processing.")
+                    valid_data = valid_data[valid_data["label"].apply(is_valid_label)]
+                    logger.info(f"Data after filtering valid labels: {valid_data.shape}")
 
-        return deduped_data
+                    # Remove duplicates
+                    deduped_data = valid_data.drop_duplicates(subset=["job_description_text", "resume_text"])
+                    logger.info(f"Final deduplicated training data shape: {deduped_data.shape}")
 
-    except ConnectionError as e:
-        # Re-raise connection errors for visibility
-        logger.error(f"Connection error: {str(e)}")
-        raise
+                    if not deduped_data.empty:
+                        return deduped_data
+                    logger.warning("Combined data was empty after validation")
+                else:
+                    logger.info("New feedback data is empty, skipping combination step")
+                    return existing_df
+
+            logger.info("No valid feedback data available, using existing training data only")
+            return existing_df
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch feedback data: {str(e)}")
+            logger.info("Falling back to existing training data only")
+            return existing_df
+
     except Exception as e:
-        logger.error(f"Error merging training data: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
+        logger.error(f"Error in fetch_training_data: {str(e)}")
         raise
 
 
