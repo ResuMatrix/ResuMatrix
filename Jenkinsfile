@@ -139,7 +139,16 @@ pipeline {
 
                     # Install dependencies
                     python -m pip install --upgrade pip
-                    python -m pip install -r retraining_pipeline/requirements.txt
+
+                    # Try to install with full requirements first
+                    echo "Attempting to install full requirements..."
+                    if ! python -m pip install -r retraining_pipeline/requirements.txt; then
+                        echo "Full requirements installation failed. Using minimal requirements..."
+                        # Create minimal requirements file without torch and transformers
+                        python -m pip install -r retraining_pipeline/requirements_minimal.txt
+                    fi
+
+                    # Always install these core packages
                     python -m pip install google-cloud-storage python-dotenv
                     '''
 
