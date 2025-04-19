@@ -4,7 +4,7 @@ pipeline {
     environment {
         // Environment variables
         GCP_CREDENTIALS = credentials('gcp-credentials')
-        GCP_BUCKET_NAME = "resumatrix-embeddings"
+        GCP_BUCKET_NAME = "us-east1-mlops-dev-8ad13d78-bucket"
         GCP_PROJECT_ID = "awesome-nimbus-452221-v2"
         MLFLOW_TRACKING_URI = "http://mlflow:5000"
         ARTIFACT_REGISTRY_REPO = "us-east1-docker.pkg.dev/awesome-nimbus-452221-v2/resume-fit-supervised/xgboost_and_cosine_similarity"

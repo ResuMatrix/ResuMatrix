@@ -5,6 +5,12 @@ services:
     platform: linux/arm64
     privileged: true
     user: root
+    command: |
+      bash -c "
+        apt-get update && \
+        apt-get install -y python3 python3-pip python3-venv && \
+        /usr/local/bin/jenkins.sh
+      "
 
     ports:
       - "8081:8080"
