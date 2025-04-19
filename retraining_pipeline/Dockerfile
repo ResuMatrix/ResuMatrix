@@ -15,11 +15,23 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file
-COPY requirements.txt .
+COPY requirements.txt ./
+
+# Create minimal requirements file
+RUN echo "scikit-learn>=1.0.0" > requirements_minimal.txt && \
+    echo "xgboost>=1.5.0" >> requirements_minimal.txt && \
+    echo "mlflow>=2.0.0" >> requirements_minimal.txt && \
+    echo "imbalanced-learn>=0.8.0" >> requirements_minimal.txt && \
+    echo "google-cloud-storage>=2.0.0" >> requirements_minimal.txt && \
+    echo "pandas>=1.3.0" >> requirements_minimal.txt && \
+    echo "numpy>=1.20.0" >> requirements_minimal.txt && \
+    echo "joblib>=1.0.0" >> requirements_minimal.txt && \
+    echo "nltk>=3.6.0" >> requirements_minimal.txt && \
+    echo "python-dotenv>=0.19.0" >> requirements_minimal.txt
 
 # Install dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    (pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements_minimal.txt)
 
 # Copy the retraining pipeline code
 COPY . .

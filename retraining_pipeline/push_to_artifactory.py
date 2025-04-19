@@ -20,6 +20,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Add console handler for better visibility
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+logger.addHandler(console_handler)
+
 def check_for_new_model(model_registry_dir="model_registry"):
     """Check if a new model has been saved."""
     indicator_file = os.path.join(model_registry_dir, "new_model_saved.txt")
@@ -125,11 +130,32 @@ ENTRYPOINT ["/app/entrypoint.sh"]
 
 def main():
     """Main function to push the model to Google Artifact Registry."""
+    # Get environment variables
+    gcp_project_id = os.environ.get("GCP_PROJECT_ID")
+    gcp_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+
+    # Print environment information for debugging
+    logger.info(f"Current working directory: {os.getcwd()}")
+    logger.info(f"GCP_PROJECT_ID: {gcp_project_id}")
+
+    # Ensure GCP credentials are properly set
+    if gcp_credentials:
+        logger.info(f"Using GCP credentials from: {gcp_credentials}")
+        # Check if the file exists
+        if os.path.exists(gcp_credentials):
+            logger.info("GCP credentials file exists.")
+        else:
+            logger.error(f"GCP credentials file does not exist at: {gcp_credentials}")
+    else:
+        logger.warning("GOOGLE_APPLICATION_CREDENTIALS not set. Using default credentials.")
+
     # Check if a new model has been saved
     model_path = check_for_new_model()
     if not model_path:
         logger.info("No new model to push to Google Artifact Registry.")
         sys.exit(0)
+
+    logger.info(f"Found new model at: {model_path}")
 
     # Build and push the Docker image
     success = build_and_push_docker_image(model_path)

@@ -32,6 +32,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Add console handler for better visibility
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+logger.addHandler(console_handler)
+
 def load_embeddings(file_path):
     """Load embeddings from a .npz file."""
     try:
@@ -116,6 +121,17 @@ def main():
     # Set up environment variables
     mlflow_uri = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5001")
     gcp_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    gcp_project_id = os.environ.get("GCP_PROJECT_ID")
+    gcp_bucket_name = os.environ.get("GCP_BUCKET_NAME")
+    data_dir = os.environ.get("DATA_DIR", "data")
+
+    # Print environment information for debugging
+    logger.info(f"Current working directory: {os.getcwd()}")
+    logger.info(f"Python path: {sys.path}")
+    logger.info(f"GCP_PROJECT_ID: {gcp_project_id}")
+    logger.info(f"GCP_BUCKET_NAME: {gcp_bucket_name}")
+    logger.info(f"DATA_DIR: {data_dir}")
+    logger.info(f"MLFLOW_TRACKING_URI: {mlflow_uri}")
 
     # Ensure GCP credentials are properly set
     if gcp_credentials:
@@ -124,6 +140,12 @@ def main():
             gcp_credentials = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', gcp_credentials))
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gcp_credentials
         logger.info(f"Using GCP credentials from: {gcp_credentials}")
+
+        # Check if the file exists
+        if os.path.exists(gcp_credentials):
+            logger.info("GCP credentials file exists.")
+        else:
+            logger.error(f"GCP credentials file does not exist at: {gcp_credentials}")
     else:
         logger.warning("GOOGLE_APPLICATION_CREDENTIALS not set. Using default credentials.")
 

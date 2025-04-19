@@ -140,11 +140,24 @@ pipeline {
                     # Install dependencies
                     python -m pip install --upgrade pip
 
+                    # Create a minimal requirements file without torch and transformers
+                    cat > retraining_pipeline/requirements_minimal.txt << EOF
+                    scikit-learn>=1.0.0
+                    xgboost>=1.5.0
+                    mlflow>=2.0.0
+                    imbalanced-learn>=0.8.0
+                    google-cloud-storage>=2.0.0
+                    pandas>=1.3.0
+                    numpy>=1.20.0
+                    joblib>=1.0.0
+                    nltk>=3.6.0
+                    python-dotenv>=0.19.0
+                    EOF
+
                     # Try to install with full requirements first
                     echo "Attempting to install full requirements..."
                     if ! python -m pip install -r retraining_pipeline/requirements.txt; then
                         echo "Full requirements installation failed. Using minimal requirements..."
-                        # Create minimal requirements file without torch and transformers
                         python -m pip install -r retraining_pipeline/requirements_minimal.txt
                     fi
 
