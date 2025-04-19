@@ -463,8 +463,11 @@ elif st.session_state.next_page == "feedback_page":
     unfit_resumes = [r for r in resumes_data if r["status"] == -1]
 
     # Sample 3 from each
-    sampled_ranked = random.sample(ranked_resumes, min(3, len(ranked_resumes)))
-    sampled_unfit = random.sample(unfit_resumes, min(3, len(unfit_resumes)))
+    if "sampled_ranked" not in st.session_state:
+        st.session_state.sampled_ranked = random.sample(ranked_resumes, min(3, len(ranked_resumes)))
+
+    if "sampled_unfit" not in st.session_state:
+        st.session_state.sampled_unfit = random.sample(unfit_resumes, min(3, len(unfit_resumes)))
 
     def get_resume_file_by_id(resume_id):
         blobs = bucket.list_blobs(prefix=f"resumes/{job_id}/")
@@ -475,7 +478,11 @@ elif st.session_state.next_page == "feedback_page":
                 return blob.download_as_bytes(), actual_name
         return None, None
     
-    st.markdown("# **Review Ranked Resumes**")
+    st.markdown("## **Review Ranked Resumes**")
+    st.markdown("Were the ranked resumes a good fit for the job description uploaded?")
+
+    sampled_ranked = st.session_state.sampled_ranked
+    sampled_unfit = st.session_state.sampled_unfit
 
     ranked_feedback = {}
     for resume in sampled_ranked:
@@ -488,11 +495,11 @@ elif st.session_state.next_page == "feedback_page":
                 ranked_feedback[f"{resume['id']}_fit"] = st.checkbox("✅ Good Fit", key=f"fit_ranked_{resume['id']}")
             with col3:
                 ranked_feedback[f"{resume['id']}_no_fit"] = st.checkbox("❌ No Fit", key=f"no_fit_ranked_{resume['id']}")
-
     
     st.markdown("---")
 
     st.markdown("# **Review Unfit Resumes**")
+    st.markdown("Were the unfit resumes not a good fit for the job description uploaded?")
 
     unfit_feedback = {}
     for resume in sampled_unfit:
@@ -505,6 +512,8 @@ elif st.session_state.next_page == "feedback_page":
                 unfit_feedback[f"{resume['id']}_fit"] = st.checkbox("✅ Good Fit", key=f"fit_unfit_{resume['id']}")
             with col3:
                 unfit_feedback[f"{resume['id']}_no_fit"] = st.checkbox("❌ No Fit", key=f"no_fit_unfit_{resume['id']}")
+
+    
 
     st.markdown("---")
 
@@ -520,73 +529,30 @@ elif st.session_state.next_page == "feedback_page":
                     resume_id, label = k.split("_", 1)
                     if v:
                         feedback_payload.append({
-                            "resume_id": int(resume_id),
+                            "id": resume_id,
                             "feedback_label": 1 if label == "fit" else -1
                         })
 
             add_feedback(ranked_feedback)
             add_feedback(unfit_feedback)
 
-            try:
-                res = requests.post(feedback_api, json={"feedback": feedback_payload})
-                if res.status_code == 200:
-                    st.success("Feedback submitted successfully!")
-                else:
-                    st.error(f"API Error {res.status_code}: {res.text}")
-            except Exception as e:
-                st.error(f"Failed to submit feedback: {e}")
+            if feedback_payload:
+                try:
+                    res = requests.put(resumes_api, json={"resumes": feedback_payload})
+                    if res.status_code == 200:
+                        st.success("Feedback submitted successfully!")
+                        st.session_state.pop("sampled_ranked", None)
+                        st.session_state.pop("sampled_unfit", None)
+                        st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
+                        st.rerun()
+                    else:
+                        st.error(f"API Error {res.status_code}: {res.text}")
+                except Exception as e:
+                    st.error(f"Failed to submit feedback: {e}")
+            else:
+                st.warning("No feedback selected to submit.")
 
     with col_skip:
         if st.button("⏭️ Skip Feedback"):
             st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
             st.rerun()
-
-
-
-
-# elif st.session_state.next_page == "feedback_page":
-#     st.sidebar.text(f"Email: {st.session_state.useremail}")
-#     st.sidebar.text(f"Username: {st.session_state.username}")
-#     st.sidebar.text(f"Date: {datetime.date.today().strftime('%B %d, %Y')}")
-#     if st.sidebar.button("Sign Out"):
-#         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
-
-#     st.sidebar.title(f"Thanks for visiting, {st.session_state.username}!")
-#     st.title(" We value your feedback")
-
-#     st.markdown("Please rate your experience with Resumatrix \n")
-
-#     feedback_questions = {
-#         "job_clarity": "How clear was the job posting after editing?",
-#         "resume_relevance": "Was the resume ranking relevant to the job description?",
-#         "system_satisfaction": "Did the system meet your expectations?",
-#         "interface_usability": "How easy was it to use the interface?",
-#         "recommendation_likelihood": "How likely are you to recommend this tool?"
-#     }
-
-#     responses = {}
-
-#     for key, question in feedback_questions.items():
-#         responses[key] = st.select_slider(question, options=[1, 2, 3, 4, 5], value=1)
-
-#     additional_comments = st.text_area("Any other suggestions or comments?")
-
-#     if st.button("📨 Submit Feedback"):
-#         feedback_payload = {
-#             "username": st.session_state.username,
-#             "useremail": st.session_state.useremail,
-#             "job_id": st.session_state.username.replace(" ", "_") + "_job",
-#             "responses": responses,
-#             "comments": additional_comments
-#         }
-
-#     api_url = "http://127.0.0.1:8000/api/feedback/submit"  # Replace with your actual feedback endpoint
-
-#     try:
-#         response = requests.post(api_url, json=feedback_payload)
-#         if response.status_code == 200:
-#             st.success("✅ Thank you for your feedback!")
-#         else:
-#             st.error(f"API responded with {response.status_code}: {response.text}")
-#     except Exception as e:
-#         st.error(f"Failed to send feedback: {e}")
