@@ -1,4 +1,5 @@
 import logging
+import os, sys
 
 # Configure logging
 logging.basicConfig(
@@ -10,13 +11,14 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.email import EmailOperator
-from airflow.providers.google.cloud.sensors.pubsub import PubSubPullSensor
+from mod_pub_sub import PubSubFinalizeSensor
 from airflow.utils.log.logging_mixin import LoggingMixin
 from google.cloud import storage
 from airflow.providers.google.cloud.hooks.gcs import GCSHook
@@ -41,6 +43,7 @@ default_args = {
 # DATA_DIR = '~/data/workspace/mlops/ResuMatrix/data'
 
 BUCKET_NAME = "us-east1-mlops-dev-8ad13d78-bucket"
+SEEN_PATH = "resumes/seen_directories.txt"
 
 # os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -128,18 +131,24 @@ BUCKET_NAME = "us-east1-mlops-dev-8ad13d78-bucket"
 #     log.info("Successfully loaded resume classification dataset!")
 #     print("Successfully loaded resume classification dataset!")
 
-def handle_notification(message, **kwargs):
+def handle_notification(**kwargs):
     from data_processing.resume_to_csv import resume_pre_processing_gcs
-    import json
-    evt = json.loads(message.data)
-    bucket = evt['bucket']
-    if bucket != BUCKET_NAME:
-        raise ValueError("Different bucket, not for this DAG.")
-    # strip off “main_folder/” and take the first segment
-    subdir = evt['name'].split('/', 2)[1]
-    log.info(f"New subdirectory: {subdir}")
-    message.ack()
-    return resume_pre_processing_gcs(subdir, bucket)
+    events = kwargs['ti'].xcom_pull(
+        task_ids='pull_gcs_events',
+        key='events'
+    )
+    for message in events:
+        log.info(f"Message keys: {message.keys()}")
+        evt = message["attributes"]
+        log.info(f"Message keys: {evt.keys()}")
+        bucket = evt['bucketId']
+        if bucket != BUCKET_NAME:
+            raise ValueError("Different bucket, not for this DAG.")
+        # strip off “main_folder/” and take the first segment
+        subdir = evt['objectId'].split('/')[1]
+        log.info(f"New subdirectory: {subdir}")
+        return resume_pre_processing_gcs(subdir, bucket)
+    log.info("No new subdirectory found.")
 
 def load_data_for_fit_pred(ti, **kwargs):
     """
@@ -163,6 +172,7 @@ def load_data_for_fit_pred(ti, **kwargs):
     resume_df = pd.DataFrame()
     jd_text = ""
     for blob in blobs:
+        log.info(f"Blob name: {blob.name}")
         if blob.name.endswith('.csv'):
             csv_data = blob.download_as_text(encoding='utf-8')
             resume_df = pd.read_csv(io.StringIO(csv_data))
@@ -276,18 +286,18 @@ with (DAG(
         description="A pipeline for extracting text from resumes and creating embeddings"
         ) as dag):
 
-    pull = PubSubPullSensor(
+    pull = PubSubFinalizeSensor(
         task_id='pull_gcs_events',
         project_id='awesome-nimbus-452221-v2',
         subscription='airflow-sub',  # matches your subscription name
         gcp_conn_id='google_cloud_default',  # picks up creds/env above
-        max_messages=1,
-        poke_interval=30,
+        max_messages=5,
+        poke_interval=10,
         timeout=300,
-        mode='reschedule',
+        mode='reschedule'
     )
 
-    start_task = EmptyOperator(task_id='start')
+    # start_task = EmptyOperator(task_id='start')
 
     # load_resumes_task = PythonOperator(
     #     task_id="load_resumes_task",
@@ -361,5 +371,5 @@ with (DAG(
     )
 
     # set the task dependencies
-    pull >> start_task >> handle_notification_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> end_task >> [email_success, email_failure]
+    pull >> handle_notification_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> end_task >> [email_success, email_failure]
 
