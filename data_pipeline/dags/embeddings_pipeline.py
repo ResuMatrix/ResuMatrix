@@ -174,7 +174,7 @@ def fetch_and_save_training_data(**kwargs):
         logger.info(f"Data after filtering valid labels: {df.shape}")
 
         # Deduplicate based on job_description_text and resume_text
-        df = df.drop_duplicates(subset=["job_description_text", "resume_text"])[:10] #remove 10 after testing embeddings
+        df = df.drop_duplicates(subset=["job_description_text", "resume_text"]).sample(n=100, random_state=42) #remove 10 after testing embeddings
         logger.info(f"Final deduplicated training data shape: {df.shape}")
 
         if df.empty:

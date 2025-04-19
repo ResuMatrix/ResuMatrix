@@ -19,7 +19,13 @@ The pipeline performs the following steps:
 - `download_from_gcs.py`: Downloads files from GCS and saves them to local disk
 - `run_retraining.py`: Loads the data, trains the model, and compares it to the best previous model
 - `Dockerfile`: Defines the Docker image for running the pipeline
-- `jenkins_pipeline.groovy`: Jenkins pipeline definition
+- `jenkins_pipeline.groovy`: Original Jenkins pipeline definition
+- `Jenkinsfile`: Standard Jenkins pipeline definition (alternative to jenkins_pipeline.groovy)
+- `docker-compose.yml`: Docker Compose file for running Jenkins and MLflow
+- `JENKINS_SETUP.md`: Detailed instructions for setting up Jenkins
+- `run_in_docker.sh`: Script to run the retraining pipeline in Docker without Jenkins
+- `run_local.sh`: Script to run the retraining pipeline in a new Python virtual environment
+- `clean_env.sh`: Script to clean up the Python virtual environment
 - `requirements.txt`: Python dependencies for the pipeline
 
 ## Environment Variables
@@ -38,13 +44,47 @@ These variables are set in the `.env` file at the root of the project.
 
 ## Setup
 
-1. Configure Jenkins with the necessary credentials and plugins
-2. Create a new Jenkins pipeline job using the `jenkins_pipeline.groovy` file
-3. Set up the required environment variables in Jenkins
+### Jenkins Setup
+
+For detailed instructions on setting up Jenkins, see `JENKINS_SETUP.md`.
+
+Quick start:
+
+1. Start Jenkins and MLflow using Docker Compose:
+   ```bash
+   cd retraining_pipeline
+   docker-compose up -d
+   ```
+
+2. Configure Jenkins with the necessary credentials and plugins
+3. Create a new Jenkins pipeline job using either the `jenkins_pipeline.groovy` file or the `Jenkinsfile`
+4. Set up the required environment variables in Jenkins
 
 ## Running Locally
 
-To run the pipeline locally:
+### Using a new Python virtual environment (recommended)
+
+The easiest way to run the pipeline locally is to use the provided script:
+
+```bash
+./run_local.sh
+```
+
+This script will:
+1. Create a new Python virtual environment called `retraining_env`
+2. Install all required dependencies
+3. Set up the necessary environment variables
+4. Run the pipeline in the virtual environment
+
+To clean up the virtual environment:
+
+```bash
+./clean_env.sh
+```
+
+### Manual execution
+
+To run the pipeline manually:
 
 1. Set up the required environment variables
 2. Run `python download_from_gcs.py` to download the data
@@ -52,7 +92,19 @@ To run the pipeline locally:
 
 ## Docker
 
-To build and run the Docker image:
+### Using the run_in_docker.sh script
+
+The easiest way to run the pipeline in Docker is to use the provided script:
+
+```bash
+./run_in_docker.sh
+```
+
+This script will build the Docker image and run the container with the appropriate environment variables.
+
+### Manual Docker setup
+
+To build and run the Docker image manually:
 
 ```bash
 docker build -t resumatrix-retraining -f Dockerfile .

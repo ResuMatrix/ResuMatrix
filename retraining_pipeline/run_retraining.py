@@ -17,6 +17,7 @@ import mlflow
 from mlflow.tracking import MlflowClient
 import joblib
 from datetime import datetime
+from sklearn.preprocessing import LabelEncoder
 
 # Add the project root to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -56,7 +57,7 @@ def get_best_model_metrics():
     """Get the metrics of the best model from MLflow."""
     try:
         # Set up MLflow client
-        client = MlflowClient(tracking_uri=os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000"))
+        client = MlflowClient(tracking_uri=os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5001"))
 
         # Get the experiment ID for XGBoost with Similarity
         experiment = client.get_experiment_by_name("XGBoost Model with Similarity")
@@ -113,7 +114,7 @@ def save_model(model, output_dir="model_registry"):
 def main():
     """Main function to run the retraining pipeline."""
     # Set up environment variables
-    mlflow_uri = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
+    mlflow_uri = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5001")
     gcp_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
 
     # Ensure GCP credentials are properly set
@@ -153,6 +154,9 @@ def main():
     # Load train and test embeddings
     X_train, y_train = load_embeddings(train_path)
     X_test, y_test = load_embeddings(test_path)
+    label_encoder = LabelEncoder()
+    y_train = label_encoder.fit_transform(y_train)
+    y_test = label_encoder.transform(y_test)
 
     if X_train is None or y_train is None or X_test is None or y_test is None:
         logger.error("Failed to load embeddings")
