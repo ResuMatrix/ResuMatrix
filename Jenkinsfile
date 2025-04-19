@@ -8,7 +8,7 @@ pipeline {
         SUPABASE_URL = credentials('SUPABASE_URL')
         SUPABASE_KEY = credentials('SUPABASE_KEY')
         GCP_BUCKET_NAME = credentials('GCP_BUCKET_NAME')
-        MLFLOW_TRACKING_URI = "http://localhost:5001"
+        MLFLOW_TRACKING_URI = "http://localhost:5050"
         DOCKER_BUILDKIT = "1"
         VENV_PATH = "${WORKSPACE}/.venv"
         // Add common Python paths

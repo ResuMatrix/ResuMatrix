@@ -9,7 +9,7 @@ services:
     env_file:
       - ../.env
     environment:
-      - MLFLOW_TRACKING_URI=http://localhost:5001
+      - MLFLOW_TRACKING_URI=http://localhost:5050
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp_credentials.json
       - DATA_DIR=/app/data
       - OUTPUT_DIR=/app/data
@@ -24,7 +24,7 @@ services:
       - ./mlflow:/app/mlflow
       - ../src:/app/src:ro
     ports:
-      - "5000:5000"
+      - "5050:5000"
     networks:
       - resumatrix-network
 
