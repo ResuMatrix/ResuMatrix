@@ -16,6 +16,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.email import EmailOperator
+from airflow.providers.google.cloud.sensors.pubsub import PubSubPullSensor
 from airflow.utils.log.logging_mixin import LoggingMixin
 from google.cloud import storage
 from airflow.providers.google.cloud.hooks.gcs import GCSHook
@@ -127,11 +128,24 @@ BUCKET_NAME = "us-east1-mlops-dev-8ad13d78-bucket"
 #     log.info("Successfully loaded resume classification dataset!")
 #     print("Successfully loaded resume classification dataset!")
 
+def handle_notification(message, **kwargs):
+    from data_processing.resume_to_csv import resume_pre_processing_gcs
+    import json
+    evt = json.loads(message.data)
+    bucket = evt['bucket']
+    if bucket != BUCKET_NAME:
+        raise ValueError("Different bucket, not for this DAG.")
+    # strip off “main_folder/” and take the first segment
+    subdir = evt['name'].split('/', 2)[1]
+    log.info(f"New subdirectory: {subdir}")
+    message.ack()
+    return resume_pre_processing_gcs(subdir, bucket)
+
 def load_data_for_fit_pred(ti, **kwargs):
     """
     Assumptions:
-        - There is a CSV loaded into "temp_data_store" with all the resumes that need fit classification.
-        - There is a TXT loaded into "temp_data_store" with the corresponding JD that those resumes need to be fit 
+        - There is a CSV loaded into "gs://{bucket_name}/{prefix}/{job_id}/" with all the resumes that need fit classification.
+        - There is a TXT loaded into "gs://{bucket_name}/{prefix}/{job_id}/" with the corresponding JD that those resumes need to be fit
         against.
         - CSV format: 2 columns, resume_id and resume.
         - Only one CSV file and one TXT file is present in the directory.
@@ -139,9 +153,13 @@ def load_data_for_fit_pred(ti, **kwargs):
     hook = GCSHook(gcp_conn_id='google_cloud_default')
     client = hook.get_conn()
     bucket = client.get_bucket(BUCKET_NAME)
-    dag_run_conf = kwargs.get('dag_run').conf or {}
-    source_dir = dag_run_conf.get('source_dir', 'random_resumes')
+    # dag_run_conf = kwargs.get('dag_run').conf or {}
+    source_dir = ti.xcom_pull(task_ids="handle_notification_task")
+    prefix = source_dir.rstrip("/").split("/")[-2]
+    job_id = source_dir.rstrip("/").split("/")[-1]
     blobs = bucket.list_blobs(prefix=source_dir)
+    log.info("Blobs: ")
+    log.info(blobs)
     resume_df = pd.DataFrame()
     jd_text = ""
     for blob in blobs:
@@ -157,11 +175,13 @@ def load_data_for_fit_pred(ti, **kwargs):
 
     resume_df['job_description_text'] = jd_text
     resume_df.rename({"resume": "resume_text"})
+    log.info("Resume DF shape: ")
+    log.info(resume_df.shape)
 
     csv_data = resume_df.to_csv(index=False)
 
     # Define your GCS bucket and blob name
-    destination_blob_name = "temp_airflow_storage/resume_jd_data.csv"  # Replace with desired blob path
+    destination_blob_name = f"{prefix}/{job_id}/resume_jd_data.csv"  # Replace with desired blob path
 
     blob = bucket.blob(destination_blob_name)
     blob.upload_from_string(csv_data, content_type='text/csv')
@@ -174,12 +194,17 @@ def load_data_for_fit_pred(ti, **kwargs):
 def gen_embeddings(ti, **kwargs):
     from data_processing.data_preprocessing import extract_embeddings
     gcs_path = ti.xcom_pull(key="data_path", task_ids="load_data_for_fit_pred_task")
+    # Path of the form: "gs://bucket_name/resumes/job_id/resume_jd_data.csv"
     if not gcs_path:
         raise ValueError("No GCS path found in XCom. Check upstream task.")
+    log.info("GCS Path from previous task: ")
+    log.info(gcs_path)
 
     # Parse the GCS path to extract bucket and blob names
     parsed = urlparse(gcs_path)
     blob_name = parsed.path.lstrip('/')
+    log.info("Blob name: ")
+    log.info(blob_name)
 
     # Initialize GCS client and download the CSV file as string
     hook = GCSHook(gcp_conn_id='google_cloud_default')
@@ -190,6 +215,8 @@ def gen_embeddings(ti, **kwargs):
 
     # Load the CSV data into a pandas DataFrame
     resume_df = pd.read_csv(io.StringIO(csv_data))
+    log.info("Resume DF shape: ")
+    log.info(resume_df.shape)
     blob.delete()
 
     X_test = extract_embeddings(resume_df, data_type="deployment")
@@ -197,7 +224,7 @@ def gen_embeddings(ti, **kwargs):
     np.save(buffer, X_test)
     buffer.seek(0)
 
-    destination_blob_name = "temp_airflow_storage/embeddings_np_array.npy"  # Replace with desired blob path
+    destination_blob_name = f"{parsed.path[:-1]}/embeddings_np_array.npy"  # Replace with desired blob path
 
     # Initialize GCS client and upload the file from the buffer
     client = storage.Client()
@@ -249,6 +276,17 @@ with (DAG(
         description="A pipeline for extracting text from resumes and creating embeddings"
         ) as dag):
 
+    pull = PubSubPullSensor(
+        task_id='pull_gcs_events',
+        project_id='awesome-nimbus-452221-v2',
+        subscription='airflow-sub',  # matches your subscription name
+        gcp_conn_id='google_cloud_default',  # picks up creds/env above
+        max_messages=1,
+        poke_interval=30,
+        timeout=300,
+        mode='reschedule',
+    )
+
     start_task = EmptyOperator(task_id='start')
 
     # load_resumes_task = PythonOperator(
@@ -257,6 +295,12 @@ with (DAG(
     #     dag=dag,
     #     provide_context=True
     # )
+
+    handle_notification_task = PythonOperator(
+        task_id='handle_notification_task',
+        python_callable=handle_notification,
+        provide_context=True,
+    )
 
     load_data_for_fit_pred_task = PythonOperator(
         task_id="load_data_for_fit_pred_task",
@@ -317,5 +361,5 @@ with (DAG(
     )
 
     # set the task dependencies
-    start_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> end_task >> [email_success, email_failure]
+    pull >> start_task >> handle_notification_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> end_task >> [email_success, email_failure]
 
