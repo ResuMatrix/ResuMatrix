@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'python:3.10-slim'
+            args '-v ${WORKSPACE}:/app'
+        }
+    }
 
     environment {
         // Environment variables
@@ -20,18 +25,11 @@ pipeline {
         stage('Setup') {
             steps {
                 sh '''
-                    # Install Python 3 and required packages
-                    echo "Installing Python 3 and required packages"
-                    sudo apt-get update
-                    sudo apt-get install -y python3 python3-pip python3-venv
-
                     # Set up GCP credentials from Jenkins
                     echo "Using GCP credentials from Jenkins"
                     export GOOGLE_APPLICATION_CREDENTIALS=${GCP_CREDENTIALS}
 
-                    # Create Python virtual environment
-                    python3 -m venv venv
-                    . venv/bin/activate
+                    # Install requirements
                     pip install --upgrade pip
                     pip install -r retraining_pipeline/requirements.txt
                     mkdir -p data model_registry
@@ -44,9 +42,6 @@ pipeline {
                 sh '''
                     # Set up GCP credentials from Jenkins
                     export GOOGLE_APPLICATION_CREDENTIALS=${GCP_CREDENTIALS}
-
-                    # Activate virtual environment
-                    . venv/bin/activate
 
                     # Run the download script
                     python retraining_pipeline/download_from_gcs.py || {
@@ -63,9 +58,6 @@ pipeline {
                     # Set up GCP credentials from Jenkins
                     export GOOGLE_APPLICATION_CREDENTIALS=${GCP_CREDENTIALS}
 
-                    # Activate virtual environment
-                    . venv/bin/activate
-
                     # Run the retraining script
                     python retraining_pipeline/run_retraining.py
                 '''
@@ -81,9 +73,6 @@ pipeline {
                 sh '''
                     # Set up GCP credentials from Jenkins
                     export GOOGLE_APPLICATION_CREDENTIALS=${GCP_CREDENTIALS}
-
-                    # Activate virtual environment
-                    . venv/bin/activate
 
                     # Run the final processing script
                     cd retraining_pipeline
