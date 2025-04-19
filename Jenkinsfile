@@ -166,7 +166,8 @@ pipeline {
                     '''
 
                     // Set GOOGLE_APPLICATION_CREDENTIALS for the pipeline
-                    sh "export GOOGLE_APPLICATION_CREDENTIALS=${WORKSPACE}/${GCP_JSON_PATH}"
+                    // Note: Using 'export' in a shell command doesn't affect the parent environment
+                    // We'll set it in each stage that needs it
                 }
             }
         }
@@ -187,8 +188,16 @@ pipeline {
                     # Activate virtual environment
                     . ${VENV_PATH}/bin/activate
 
+                    # Make sure required packages are installed
+                    python -m pip install google-cloud-storage python-dotenv
+
                     # Set environment variables
                     export GOOGLE_APPLICATION_CREDENTIALS=${gcp_json_path}
+
+                    # Print debug information
+                    echo "GOOGLE_APPLICATION_CREDENTIALS: ${gcp_json_path}"
+                    echo "Checking if credentials file exists:"
+                    ls -la ${gcp_json_path} || echo "Credentials file not found!"
 
                     # Run the script
                     cd retraining_pipeline
@@ -284,8 +293,16 @@ pipeline {
                     # Activate virtual environment
                     . ${VENV_PATH}/bin/activate
 
+                    # Make sure required packages are installed
+                    python -m pip install google-cloud-storage python-dotenv
+
                     # Set environment variables
                     export GOOGLE_APPLICATION_CREDENTIALS=${gcp_json_path}
+
+                    # Print debug information
+                    echo "GOOGLE_APPLICATION_CREDENTIALS: ${gcp_json_path}"
+                    echo "Checking if credentials file exists:"
+                    ls -la ${gcp_json_path} || echo "Credentials file not found!"
 
                     # Run the script
                     cd retraining_pipeline
