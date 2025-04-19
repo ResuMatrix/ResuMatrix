@@ -1,41 +1,33 @@
-version: '3'
+version: '3.8'
+
 services:
-  jenkins:
-    image: jenkins/jenkins:lts-jdk17
-    platform: linux/arm64
-    privileged: true
-    user: root
-    command: |
-      bash -c "
-        apt-get update && \
-        apt-get install -y python3 python3-pip python3-venv && \
-        /usr/local/bin/jenkins.sh
-      "
-
-    ports:
-      - "8081:8080"
-      - "50000:50000"
-    container_name: jenkins
-    volumes:
-      - jenkins_home:/var/jenkins_home
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /usr/local/bin/docker:/usr/bin/docker
-      - ${PWD}:/workspace
+  retrainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: resumatrix-retrainer
+    env_file:
+      - ../.env
     environment:
-      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-awesome-nimbus-452221-v2}
+      - MLFLOW_TRACKING_URI=http://localhost:5001
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp_credentials.json
+      - DATA_DIR=/app/data
+      - OUTPUT_DIR=/app/data
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
       - GCP_BUCKET_NAME=${GCP_BUCKET_NAME:-resumatrix-embeddings}
-      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-http://mlflow:5000}
-      - ARTIFACT_REGISTRY_REPO=${ARTIFACT_REGISTRY_REPO:-us-east1-docker.pkg.dev/awesome-nimbus-452221-v2/resume-fit-supervised/xgboost_and_cosine_similarity}
-
-  mlflow:
-    image: ghcr.io/mlflow/mlflow:latest
-    ports:
-      - "5001:5000"
-    container_name: mlflow
-    command: mlflow server --host 0.0.0.0
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
     volumes:
-      - mlflow_data:/mlflow
+      - ./data:/app/data
+      - ./model_registry:/app/model_registry
+      - ${GCP_JSON_PATH}:/app/gcp_credentials.json:ro
+      - ./mlflow:/app/mlflow
+      - ../src:/app/src:ro
+    ports:
+      - "5000:5000"
+    networks:
+      - resumatrix-network
 
-volumes:
-  jenkins_home:
-  mlflow_data:
+networks:
+  resumatrix-network:
+    driver: bridge
