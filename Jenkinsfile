@@ -11,6 +11,8 @@ pipeline {
         MLFLOW_TRACKING_URI = "http://localhost:5001"
         DOCKER_BUILDKIT = "1"
         VENV_PATH = "${WORKSPACE}/.venv"
+        // Add common Python paths
+        PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:${PATH}"
     }
 
     triggers {
@@ -53,6 +55,32 @@ pipeline {
             }
         }
 
+        stage('Check Python Installation') {
+            steps {
+                sh '''
+                # Check for Python installations
+                echo "Checking for Python installations..."
+                echo "PATH: $PATH"
+
+                # Try different Python commands
+                if command -v python3 &> /dev/null; then
+                    echo "python3 found at: $(which python3)"
+                    echo "python3 version: $(python3 --version)"
+                elif command -v python &> /dev/null; then
+                    echo "python found at: $(which python)"
+                    echo "python version: $(python --version)"
+                else
+                    echo "ERROR: No Python installation found!"
+                    echo "Checking common locations..."
+                    ls -la /usr/bin/python* || true
+                    ls -la /usr/local/bin/python* || true
+                    ls -la /opt/homebrew/bin/python* || true
+                    exit 1
+                fi
+                '''
+            }
+        }
+
         stage('Setup Environment') {
             steps {
                 script {
@@ -71,17 +99,18 @@ pipeline {
                             echo "Using GCP credentials from path: ${gcp_json_path}"
                         }
 
-                        // Create .env file
-                        sh """
-                        cat > .env << EOF
+                        // Create .env file using writeFile instead of shell
+                        def envContent = """
                         GCP_PROJECT_ID=${GCP_PROJECT_ID}
                         GCP_JSON_PATH=${gcp_json_path}
                         GCP_BUCKET_NAME=${GCP_BUCKET_NAME}
                         SUPABASE_URL=${SUPABASE_URL}
                         SUPABASE_KEY=${SUPABASE_KEY}
                         MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
-                        EOF
-                        """
+                        """.trim()
+
+                        writeFile file: "${WORKSPACE}/.env", text: envContent
+                        echo "Created .env file at ${WORKSPACE}/.env"
                     }
 
                     // Ensure directories exist
@@ -93,11 +122,25 @@ pipeline {
 
                     // Create and activate virtual environment
                     sh '''
-                    python -m venv ${VENV_PATH}
+                    # Find the Python executable (try python3 first, then python)
+                    PYTHON_CMD="python3"
+                    if ! command -v $PYTHON_CMD &> /dev/null; then
+                        PYTHON_CMD="python"
+                        if ! command -v $PYTHON_CMD &> /dev/null; then
+                            echo "Error: Neither python3 nor python found in PATH"
+                            exit 1
+                        fi
+                    fi
+                    echo "Using Python command: $PYTHON_CMD"
+
+                    # Create virtual environment
+                    $PYTHON_CMD -m venv ${VENV_PATH}
                     . ${VENV_PATH}/bin/activate
-                    pip install --upgrade pip
-                    pip install -r retraining_pipeline/requirements.txt
-                    pip install google-cloud-storage python-dotenv
+
+                    # Install dependencies
+                    python -m pip install --upgrade pip
+                    python -m pip install -r retraining_pipeline/requirements.txt
+                    python -m pip install google-cloud-storage python-dotenv
                     '''
 
                     // Set GOOGLE_APPLICATION_CREDENTIALS for the pipeline
@@ -109,12 +152,23 @@ pipeline {
         stage('Download Embeddings') {
             steps {
                 script {
-                    // Get the GCP_JSON_PATH from the .env file
-                    def gcp_json_path = sh(script: 'cat .env | grep GCP_JSON_PATH | cut -d= -f2', returnStdout: true).trim()
+                    // Use the GCP_JSON_PATH directly from the environment
+                    def gcp_json_path = env.GCP_JSON_PATH
 
                     sh """
+                    # Check if virtual environment exists
+                    if [ ! -d "${VENV_PATH}" ]; then
+                        echo "Error: Virtual environment not found at ${VENV_PATH}"
+                        exit 1
+                    fi
+
+                    # Activate virtual environment
                     . ${VENV_PATH}/bin/activate
+
+                    # Set environment variables
                     export GOOGLE_APPLICATION_CREDENTIALS=${gcp_json_path}
+
+                    # Run the script
                     cd retraining_pipeline
                     python download_from_gcs.py
                     """
@@ -126,8 +180,8 @@ pipeline {
             steps {
                 script {
                     dir('retraining_pipeline') {
-                        // Get the GCP_JSON_PATH from the previous stage
-                        def gcp_json_path = sh(script: 'cat ../.env | grep GCP_JSON_PATH | cut -d= -f2', returnStdout: true).trim()
+                        // Use the GCP_JSON_PATH directly from the environment
+                        def gcp_json_path = env.GCP_JSON_PATH
 
                         sh """
                         # Set environment variables for Docker
@@ -151,8 +205,8 @@ pipeline {
             steps {
                 script {
                     dir('retraining_pipeline') {
-                        // Get the GCP_JSON_PATH from the previous stage
-                        def gcp_json_path = sh(script: 'cat ../.env | grep GCP_JSON_PATH | cut -d= -f2', returnStdout: true).trim()
+                        // Use the GCP_JSON_PATH directly from the environment
+                        def gcp_json_path = env.GCP_JSON_PATH
 
                         sh """
                         # Set environment variables for Docker
@@ -195,12 +249,23 @@ pipeline {
             }
             steps {
                 script {
-                    // Get the GCP_JSON_PATH from the .env file
-                    def gcp_json_path = sh(script: 'cat .env | grep GCP_JSON_PATH | cut -d= -f2', returnStdout: true).trim()
+                    // Use the GCP_JSON_PATH directly from the environment
+                    def gcp_json_path = env.GCP_JSON_PATH
 
                     sh """
+                    # Check if virtual environment exists
+                    if [ ! -d "${VENV_PATH}" ]; then
+                        echo "Error: Virtual environment not found at ${VENV_PATH}"
+                        exit 1
+                    fi
+
+                    # Activate virtual environment
                     . ${VENV_PATH}/bin/activate
+
+                    # Set environment variables
                     export GOOGLE_APPLICATION_CREDENTIALS=${gcp_json_path}
+
+                    # Run the script
                     cd retraining_pipeline
                     python push_to_artifactory.py
                     """
