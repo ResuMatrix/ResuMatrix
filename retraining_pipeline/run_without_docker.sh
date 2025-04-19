@@ -1,31 +1,20 @@
 #!/bin/bash
 # Script to run the retraining pipeline without Docker
 
-# Load environment variables from .env file
-if [ -f ../.env ]; then
-    export $(grep -v '^#' ../.env | xargs)
-elif [ -f .env ]; then
-    export $(grep -v '^#' .env | xargs)
-fi
-
 # Set default values for environment variables
 export GCP_BUCKET_NAME=${GCP_BUCKET_NAME:-resumatrix-embeddings}
 export GCP_PROJECT_ID=${GCP_PROJECT_ID:-awesome-nimbus-452221-v2}
 export MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-http://localhost:5001}
 export ARTIFACT_REGISTRY_REPO=${ARTIFACT_REGISTRY_REPO:-us-east1-docker.pkg.dev/${GCP_PROJECT_ID}/resume-fit-supervised/xgboost_and_cosine_similarity}
-export GCP_JSON_PATH=${GCP_JSON_PATH:-gcp-credentials.json}
 
-# Check if GCP credentials file exists
-if [ ! -f "$GCP_JSON_PATH" ] && [ ! -f "../$GCP_JSON_PATH" ]; then
-    echo "Error: GCP credentials file not found at $GCP_JSON_PATH or ../$GCP_JSON_PATH"
+# Check if GCP credentials are set
+if [ -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+    echo "ERROR: GOOGLE_APPLICATION_CREDENTIALS not set."
+    echo "Please set the GOOGLE_APPLICATION_CREDENTIALS environment variable."
     exit 1
 fi
 
-if [ -f "$GCP_JSON_PATH" ]; then
-    export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/$GCP_JSON_PATH
-elif [ -f "../$GCP_JSON_PATH" ]; then
-    export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/../$GCP_JSON_PATH
-fi
+echo "Using GCP credentials from GOOGLE_APPLICATION_CREDENTIALS"
 
 # Create directories if they don't exist
 mkdir -p ../data ../model_registry

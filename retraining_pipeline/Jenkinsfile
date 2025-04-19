@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        // Environment variables from Jenkins credentials
-        GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-credentials')
+        // Environment variables
+        GCP_CREDENTIALS = credentials('gcp-credentials')
         GCP_BUCKET_NAME = "resumatrix-embeddings"
         GCP_PROJECT_ID = "awesome-nimbus-452221-v2"
         MLFLOW_TRACKING_URI = "http://mlflow:5000"
@@ -20,6 +20,11 @@ pipeline {
         stage('Setup') {
             steps {
                 sh '''
+                    # Set up GCP credentials from Jenkins
+                    echo "Using GCP credentials from Jenkins"
+                    export GOOGLE_APPLICATION_CREDENTIALS=${GCP_CREDENTIALS}
+
+                    # Create Python virtual environment
                     python3 -m venv venv
                     . venv/bin/activate
                     pip install --upgrade pip
@@ -32,8 +37,17 @@ pipeline {
         stage('Download from GCS') {
             steps {
                 sh '''
+                    # Set up GCP credentials from Jenkins
+                    export GOOGLE_APPLICATION_CREDENTIALS=${GCP_CREDENTIALS}
+
+                    # Activate virtual environment
                     . venv/bin/activate
-                    python retraining_pipeline/download_from_gcs.py
+
+                    # Run the download script
+                    python retraining_pipeline/download_from_gcs.py || {
+                        echo "ERROR: Failed to download data from GCS. Please check your GCP credentials and bucket configuration."
+                        exit 1
+                    }
                 '''
             }
         }
@@ -41,7 +55,13 @@ pipeline {
         stage('Run Retraining') {
             steps {
                 sh '''
+                    # Set up GCP credentials from Jenkins
+                    export GOOGLE_APPLICATION_CREDENTIALS=${GCP_CREDENTIALS}
+
+                    # Activate virtual environment
                     . venv/bin/activate
+
+                    # Run the retraining script
                     python retraining_pipeline/run_retraining.py
                 '''
             }
@@ -54,7 +74,13 @@ pipeline {
             }
             steps {
                 sh '''
-                    # Run the non-Docker script
+                    # Set up GCP credentials from Jenkins
+                    export GOOGLE_APPLICATION_CREDENTIALS=${GCP_CREDENTIALS}
+
+                    # Activate virtual environment
+                    . venv/bin/activate
+
+                    # Run the final processing script
                     cd retraining_pipeline
                     chmod +x run_without_docker.sh
                     ./run_without_docker.sh
