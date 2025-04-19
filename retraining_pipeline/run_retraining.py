@@ -62,7 +62,7 @@ def get_best_model_metrics():
     """Get the metrics of the best model from MLflow."""
     try:
         # Set up MLflow client
-        client = MlflowClient(tracking_uri=os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5001"))
+        client = MlflowClient(tracking_uri=os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000"))
 
         # Get the experiment ID for XGBoost with Similarity
         experiment = client.get_experiment_by_name("XGBoost Model with Similarity")
@@ -119,7 +119,7 @@ def save_model(model, output_dir="model_registry"):
 def main():
     """Main function to run the retraining pipeline."""
     # Set up environment variables
-    mlflow_uri = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5001")
+    mlflow_uri = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
     gcp_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     gcp_project_id = os.environ.get("GCP_PROJECT_ID")
     gcp_bucket_name = os.environ.get("GCP_BUCKET_NAME")
