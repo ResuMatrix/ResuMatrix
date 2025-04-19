@@ -19,8 +19,7 @@ The pipeline performs the following steps:
 - `download_from_gcs.py`: Downloads files from GCS and saves them to local disk
 - `run_retraining.py`: Loads the data, trains the model, and compares it to the best previous model
 - `Dockerfile`: Defines the Docker image for running the pipeline
-- `jenkins_pipeline.groovy`: Original Jenkins pipeline definition
-- `Jenkinsfile`: Standard Jenkins pipeline definition (alternative to jenkins_pipeline.groovy)
+- `Jenkinsfile`: Standard Jenkins pipeline definition
 - `docker-compose.yml`: Docker Compose file for running Jenkins and MLflow
 - `JENKINS_SETUP.md`: Detailed instructions for setting up Jenkins
 - `run_in_docker.sh`: Script to run the retraining pipeline in Docker without Jenkins
@@ -57,7 +56,7 @@ Quick start:
    ```
 
 2. Configure Jenkins with the necessary credentials and plugins
-3. Create a new Jenkins pipeline job using either the `jenkins_pipeline.groovy` file or the `Jenkinsfile`
+3. Create a new Jenkins pipeline job using the `Jenkinsfile`
 4. Set up the required environment variables in Jenkins
 
 ## Running Locally
