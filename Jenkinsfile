@@ -234,12 +234,10 @@ pipeline {
             )
         }
         always {
-            node {
-                // Clean up virtual environment if it exists
-                sh "rm -rf ${WORKSPACE}/.venv || true"
-                // Clean workspace
-                cleanWs()
-            }
+            // Clean up virtual environment if it exists
+            sh "rm -rf ${WORKSPACE}/.venv || true"
+            // Clean workspace
+            cleanWs()
         }
     }
 }
