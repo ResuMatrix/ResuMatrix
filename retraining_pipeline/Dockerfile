@@ -11,8 +11,12 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
+    git \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Set Git Python Refresh to quiet to avoid warnings
+ENV GIT_PYTHON_REFRESH=quiet
 
 # Copy requirements file
 COPY requirements.txt ./

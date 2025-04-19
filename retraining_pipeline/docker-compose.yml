@@ -7,10 +7,12 @@ services:
     command: >
       bash -c "pip install mlflow>=2.0.0 &&
               mkdir -p /mlflow &&
+              export GIT_PYTHON_REFRESH=quiet &&
               mlflow server
               --host 0.0.0.0
               --port 5000
-              --backend-store-uri /mlflow"
+              --backend-store-uri /mlflow
+              --default-artifact-root /mlflow"
     volumes:
       - ./mlflow:/mlflow
     ports:

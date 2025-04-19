@@ -150,8 +150,35 @@ def main():
         logger.warning("GOOGLE_APPLICATION_CREDENTIALS not set. Using default credentials.")
 
     # Set up MLflow tracking URI
-    mlflow.set_tracking_uri(mlflow_uri)
-    logger.info(f"MLflow tracking URI: {mlflow_uri}")
+    try:
+        mlflow.set_tracking_uri(mlflow_uri)
+        logger.info(f"MLflow tracking URI: {mlflow_uri}")
+
+        # Wait for MLflow server to start up (max 60 seconds)
+        import time
+        import requests
+        from urllib3.exceptions import NewConnectionError
+
+        max_retries = 12
+        retry_delay = 5
+        for i in range(max_retries):
+            try:
+                response = requests.get(f"{mlflow_uri}/api/2.0/mlflow/experiments/list")
+                if response.status_code == 200:
+                    logger.info("Successfully connected to MLflow server")
+                    break
+                else:
+                    logger.warning(f"MLflow server returned status code {response.status_code}")
+            except (requests.exceptions.ConnectionError, NewConnectionError) as e:
+                if i < max_retries - 1:
+                    logger.warning(f"Waiting for MLflow server to start up (attempt {i+1}/{max_retries})")
+                    time.sleep(retry_delay)
+                else:
+                    logger.warning("Failed to connect to MLflow server after multiple attempts")
+                    logger.warning("Continuing without MLflow tracking...")
+    except Exception as e:
+        logger.warning(f"Failed to set MLflow tracking URI: {str(e)}")
+        logger.warning("Continuing without MLflow tracking...")
 
     # Load file paths
     data_dir = os.environ.get("DATA_DIR", "data")
