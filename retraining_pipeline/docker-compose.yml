@@ -5,14 +5,23 @@ services:
     image: python:3.12-slim
     container_name: mlflow-server
     command: >
-      bash -c "pip install mlflow>=2.0.0 &&
+      bash -c "apt-get update && apt-get install -y curl &&
+              pip install mlflow>=2.0.0 scikit-learn pandas &&
               mkdir -p /mlflow &&
               export GIT_PYTHON_REFRESH=quiet &&
+              export PYTHONUNBUFFERED=1 &&
+              echo 'Starting MLflow server...' &&
               mlflow server
               --host 0.0.0.0
               --port 5000
               --backend-store-uri /mlflow
               --default-artifact-root /mlflow"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/2.0/mlflow/experiments/list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     volumes:
       - ./mlflow:/mlflow
     ports:
@@ -47,7 +56,8 @@ services:
     networks:
       - resumatrix-network
     depends_on:
-      - mlflow
+      mlflow:
+        condition: service_healthy
 
 networks:
   resumatrix-network:
