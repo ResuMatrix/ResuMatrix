@@ -1,10 +1,10 @@
 from supabase import create_client, Client
-from typing import List, Optional
+from typing import Any, List, Optional, Dict
 from app.core.config import settings
 from app.models import *
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('uvicorn.error')
 
 class DatabaseService:
     def __init__(self, url: str, key:str):
@@ -79,7 +79,7 @@ class DatabaseService:
             logger.error(f"Error creating resume: {str(e)}")
             raise
 
-    async def create_resumes(self, job_id: str, resume_text_list: List[str]) -> Optional[List[Resume]]:
+    async def create_resumes(self, job_id: str, resume_text_list: List[str]) -> List[Resume]:
         """Creates multiple resumes given a job_id"""
         resume_list = [
                 {
@@ -87,6 +87,7 @@ class DatabaseService:
                     "resume_text": resume_text,
                     "status": -2,
                     "fit_probability": 0,
+                    "feedback_label": 0,
                  } for resume_text in resume_text_list
             ]
         try:
@@ -94,7 +95,7 @@ class DatabaseService:
             return ResumeList.model_validate({"resume_list": result.data}).resume_list
         except Exception as e:
             logger.error(f"Error creating resumes for job_id {job_id}: {str(e)}")
-        raise
+            raise
 
 
     async def get_resume(self, resume_id: str) -> Optional[Resume]:
@@ -136,16 +137,16 @@ class DatabaseService:
             raise
 
 
-    async def update_resume_status(self, resume_id, status: int) -> Optional[str]:
-        """update the status of the resume"""
+    async def update_resumes_with_job_id(self, job_id: str, resumes: List[Dict[str, Any]]) -> Optional[List[Resume]]:
+        """update the resumes based on job_id"""
+        updated_res = []
         try:
-            result = self.client.table("resumes").insert({
-                "id": resume_id,
-                "status": status
-                }).execute()
-            return result.data[0].id
+            for resume in resumes:
+                result = self.client.table("resumes").update(resume).eq("id", resume["id"]).execute()
+                updated_res.append(result.data[0])
+            return ResumeList.model_validate({"resume_list": updated_res}).resume_list
         except Exception as e:
-            logger.error(f"Error updating resume status: {str(e)}")
+            logger.error(f"Error updating resumes: {str(e)}")
             raise
 
     # TrainingData CRUD

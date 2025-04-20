@@ -1,11 +1,12 @@
 from typing import List
-from fastapi import APIRouter, HTTPException, UploadFile, Depends, Body
+from fastapi import APIRouter, HTTPException, UploadFile, Depends, Body, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 import pymupdf
 from app.services.database import DatabaseService
+from app.services.resume_processing import ResumeProcessingService
 from app.services.storage import StorageService
-from app.api.deps import get_db_service, get_storage_service
+from app.api.deps import get_db_service, get_storage_service, get_resume_processing_service
 import logging
 import io
 
@@ -47,9 +48,9 @@ async def upload_resume_files(
                     text += pdf_doc[page_num].get_text("text")
             resume_text_list.append(text)
 
-        _ = await db_service.create_resumes(job_id, resume_text_list)
+        resumes = await db_service.create_resumes(job_id, resume_text_list)
         
-        public_urls = await storage_service.upload_resumes(job_id, files) 
+        public_urls = await storage_service.upload_resumes(job_id, files, resumes) 
         return JSONResponse(content={"public_urls": public_urls}, status_code=201)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
@@ -67,6 +68,25 @@ async def get_all_resumes_with_job_id(
             raise HTTPException(status_code=404, detail=f"No resumes found with job_id: {job_id}")
         else:
             return JSONResponse(content={"job_text": jd.job_text, "resumes" : jsonable_encoder(resumes)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@router.put("/{job_id}/resumes", status_code=200)
+async def update_resumes_with_job_id(
+        job_id: str,
+        data: dict = Body(...),
+        db_service:DatabaseService = Depends(get_db_service)):
+    try:
+        if "resumes" not in data:
+            raise HTTPException(status_code=400, detail=f"Missing json value resumes from request body")
+        resume_list = data["resumes"]
+        resumes = await db_service.update_resumes_with_job_id(job_id, resume_list)
+
+        if resumes is not None:
+            return JSONResponse(content={"resumes" : jsonable_encoder(resumes)})
+        LOG.warning(f"No resumes were updated for job_id: {job_id}")
+        raise HTTPException(status_code=422, detail=f"No resumes were updated for job_id: {job_id}")
+                    
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
@@ -118,4 +138,20 @@ async def get_all_jobs_by_user_id(
             return JSONResponse(content={"jobs": jsonable_encoder(jobs)})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@router.post("/{job_id}/rank")
+async def trigger_ranking_process(
+        job_id: str,
+        background_tasks: BackgroundTasks,
+        db_service: DatabaseService = Depends(get_db_service),
+        res_processing_service: ResumeProcessingService = Depends(get_resume_processing_service)):
+    try:
+        job = await db_service.get_job(job_id)
+        resumes = await db_service.get_resumes_with_job_id(job_id)
+        filtered_resumes = [resume for resume in resumes if resume and resume.status == 0]
+        background_tasks.add_task(res_processing_service.run_ranking, job_id, job.job_text, filtered_resumes)
+        return JSONResponse(content="", status_code=202)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
 
