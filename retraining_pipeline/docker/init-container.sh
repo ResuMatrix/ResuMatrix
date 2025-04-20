@@ -3,6 +3,16 @@ set -e
 
 echo "Starting initialization of unified MLOps environment..."
 
+# Set up Docker socket permissions for Jenkins
+echo "Setting up Docker socket permissions..."
+if [ "$EUID" -ne 0 ]; then
+  echo "Note: Not running as root. Docker socket permissions may need to be set manually."
+  echo "You can run 'sudo chmod 666 /var/run/docker.sock' after container startup."
+else
+  chmod 666 /var/run/docker.sock
+  echo "Docker socket permissions updated."
+fi
+
 # Check if Docker is running
 if ! docker info > /dev/null 2>&1; then
   echo "Error: Docker is not running. Please start Docker and try again."

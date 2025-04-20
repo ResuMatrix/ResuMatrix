@@ -54,6 +54,19 @@ def build_and_push_docker_image(model_path):
         artifact_registry_repo = os.environ.get("ARTIFACT_REGISTRY_REPO")
         gcp_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
 
+        # Check if sudo is available
+        use_sudo = False
+        try:
+            sudo_check = subprocess.run("sudo -n true", shell=True, capture_output=True, text=True)
+            use_sudo = sudo_check.returncode == 0
+            if use_sudo:
+                logger.info("Using sudo for Docker commands")
+            else:
+                logger.info("Sudo not available, using Docker commands directly")
+        except Exception as e:
+            logger.warning(f"Error checking sudo availability: {str(e)}")
+            logger.info("Proceeding without sudo")
+
         # Validate required environment variables
         if not gcp_project_id:
             logger.error("GCP_PROJECT_ID environment variable not set.")
@@ -131,20 +144,48 @@ ENTRYPOINT ["/app/entrypoint.sh"]
 
         # 5. Build the Docker image
         logger.info(f"Building Docker image: {image_tag}")
-        build_command = f"docker build -f ModelDockerfile -t {image_tag} ."
+        # Use sudo if available, otherwise try without sudo
+        docker_cmd_prefix = "sudo " if use_sudo else ""
+        build_command = f"{docker_cmd_prefix}docker build -f ModelDockerfile -t {image_tag} ."
         process = subprocess.run(build_command, shell=True, capture_output=True, text=True)
         if process.returncode != 0:
             logger.error(f"Error building Docker image: {process.stderr}")
-            return False
-        logger.info("Successfully built Docker image")
+            # If we didn't use sudo and it failed, try with sudo as a fallback
+            if not use_sudo:
+                logger.info("Trying with sudo as fallback")
+                build_command = f"sudo docker build -f ModelDockerfile -t {image_tag} ."
+                process = subprocess.run(build_command, shell=True, capture_output=True, text=True)
+                if process.returncode != 0:
+                    logger.error(f"Error building Docker image with sudo fallback: {process.stderr}")
+                    return False
+                else:
+                    use_sudo = True  # Use sudo for subsequent commands
+                    logger.info("Successfully built Docker image with sudo fallback")
+            else:
+                return False
+        else:
+            logger.info("Successfully built Docker image")
 
         # 6. Push the Docker image to Google Artifact Registry
         logger.info(f"Pushing Docker image to Google Artifact Registry: {image_tag}")
-        push_command = f"docker push {image_tag}"
+        # Use sudo if available, otherwise try without sudo
+        docker_cmd_prefix = "sudo " if use_sudo else ""
+        push_command = f"{docker_cmd_prefix}docker push {image_tag}"
         process = subprocess.run(push_command, shell=True, capture_output=True, text=True)
         if process.returncode != 0:
             logger.error(f"Error pushing Docker image to Google Artifact Registry: {process.stderr}")
-            return False
+            # If we didn't use sudo and it failed, try with sudo as a fallback
+            if not use_sudo:
+                logger.info("Trying with sudo as fallback")
+                push_command = f"sudo docker push {image_tag}"
+                process = subprocess.run(push_command, shell=True, capture_output=True, text=True)
+                if process.returncode != 0:
+                    logger.error(f"Error pushing Docker image with sudo fallback: {process.stderr}")
+                    return False
+                else:
+                    logger.info("Successfully pushed Docker image with sudo fallback")
+            else:
+                return False
         logger.info("Successfully pushed Docker image to Google Artifact Registry")
 
         # 7. Save the image tag for reference

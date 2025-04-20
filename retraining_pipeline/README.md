@@ -8,6 +8,8 @@ This directory contains the code and configuration for the automated model retra
   - `Dockerfile`: Defines the Docker image with Jenkins and MLflow
   - `start-services.sh`: Script to start both Jenkins and MLflow services
   - `init-container.sh`: Script to initialize and run the Docker container
+  - `setup_docker_permissions.sh`: Script to set up Docker permissions for Jenkins
+  - `DOCKER_PERMISSIONS.md`: Documentation for Docker permissions setup
   - `README.md`: Documentation for the Docker setup
 
 - `Jenkinsfile`: Defines the Jenkins pipeline for model retraining
@@ -18,18 +20,26 @@ This directory contains the code and configuration for the automated model retra
 
 ## Getting Started
 
-1. Set up the Docker environment:
+1. Set up Docker permissions for Jenkins (required for the pipeline to build and push Docker images):
+   ```bash
+   cd docker
+   chmod +x setup_docker_permissions.sh
+   sudo ./setup_docker_permissions.sh
+   ```
+   See `docker/DOCKER_PERMISSIONS.md` for more details on Docker permissions.
+
+2. Set up the Docker environment:
    ```bash
    cd docker
    chmod +x init-container.sh
    ./init-container.sh
    ```
 
-2. Access Jenkins at http://localhost:8080 and set up the necessary credentials.
+3. Access Jenkins at http://localhost:8080 and set up the necessary credentials.
 
-3. Access MLflow at http://localhost:5001 to view experiment results.
+4. Access MLflow at http://localhost:5001 to view experiment results.
 
-4. Create and run the model retraining pipeline in Jenkins.
+5. Create and run the model retraining pipeline in Jenkins.
 
 ## Pipeline Stages
 

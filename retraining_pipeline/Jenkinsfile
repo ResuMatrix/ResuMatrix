@@ -1,6 +1,11 @@
 pipeline {
     agent any
 
+    // Note: This pipeline requires Docker access. Ensure one of the following is configured:
+    // 1. The Jenkins user has been added to the docker group: usermod -aG docker jenkins
+    // 2. The Jenkins user has sudo access to run docker commands without password
+    // 3. The Docker socket permissions have been modified: chmod 666 /var/run/docker.sock
+
     environment {
         // Load credentials from env_variables.json
         MLFLOW_TRACKING_URI = credentials('MLFLOW_TRACKING_URI')
@@ -63,6 +68,11 @@ pipeline {
 
                     # Verify the file exists and is valid JSON
                     cat "${GOOGLE_APPLICATION_CREDENTIALS}" | jq . > /dev/null || echo "Warning: Credentials file is not valid JSON"
+
+                    # Ensure Jenkins can run Docker commands with sudo
+                    # This assumes the Jenkins user has been added to the sudoers file with NOPASSWD for docker commands
+                    # If this fails, you'll need to configure sudoers on the Jenkins server
+                    sudo -n true || echo "Warning: Jenkins user may not have sudo privileges without password"
 
                     python push_to_artifactory.py
                     '''
