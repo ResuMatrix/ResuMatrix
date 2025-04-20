@@ -23,9 +23,11 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: str
     OPENAI_API_KEY: str
 
+    # Backend api base url
+    RESUMATRIX_API_URL: str
+
     class Config:
         env_file = str(Path(__file__).resolve().parent.parent.parent / ".env")
         env_file_encoding = 'utf-8'
-        # env_file = ".env"
 
 settings = Settings() 

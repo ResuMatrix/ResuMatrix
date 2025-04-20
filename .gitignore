@@ -178,3 +178,6 @@ cython_debug/
 data_pipeline/awesome-nimbus-452221-v2-06cf77823029.json
 .gitignore
 awesome-nimbus-452221-v2-06cf77823029.json
+artifactory_key.json
+env_variables_updated.json
+env_variables.json

@@ -2,14 +2,24 @@ import streamlit as st
 from io import BytesIO
 from supabase_auth import authenticate_user, register_user
 from text_extraction import extract_text_from_file
-from resume_ranker import process_resumes
 import json
 from jd_to_text import jobPosting_pre_processing
-from resume_to_csv import resume_pre_processing
+import datetime
 import zipfile
 import os
 import requests
+import time
+import requests
+import random
+from google.cloud import storage
+from utils.create_download_link import create_download_link
 
+API_BASE_URL = os.getenv("RESUMATRIX_API_URL", "http://localhost:8000")
+GCP_BUCKET = os.getenv("GCP_BUCKET_NAME")
+
+# GCP access setup
+client = storage.Client.from_service_account_json("gcp_secret_key.json")
+bucket = client.bucket(GCP_BUCKET)
 
 # Streamlit UI
 st.set_page_config(page_title="ResuMatrix", page_icon=":briefcase:", layout="wide")
@@ -100,11 +110,14 @@ def login_user():
 
 # Main flow
 if st.session_state.signout:
-    st.text('Name: ' + st.session_state.username)
-    st.text('Email id: ' + st.session_state.useremail)
-    st.button('Sign out', on_click=lambda: st.session_state.update({
-        "signout": False, "signedout": False, "username": "", "useremail": "", "userid": ""
-    }))
+    top_left, top_spacer, top_right = st.columns([2, 6, 2])
+    with top_left:
+        st.markdown(f"**Name:** {st.session_state.username}")
+        st.markdown(f"**Email:** {st.session_state.useremail}")
+    with top_right:
+        st.button(' Sign Out ', on_click=lambda: st.session_state.update({
+            "signout": False, "signedout": False, "username": "", "useremail": "", "userid": ""
+        }))
 
 # Authentication Page
 if not st.session_state["signedout"]:  # Only show if the state is False
@@ -123,13 +136,13 @@ if not st.session_state["signedout"]:  # Only show if the state is False
     else:
         if st.button('Login', on_click=login_user):
             st.session_state.next_page = 'dashboard_page'
-            # login_user()
 
 elif st.session_state.next_page == 'dashboard_page':
 
     # Dashboard Page
     st.sidebar.title(f"Welcome, {st.session_state.username}!")
     st.sidebar.text(f"Email: {st.session_state.useremail}")
+    st.sidebar.text(f"Date: {datetime.date.today().strftime('%B %d, %Y')}")
     if st.sidebar.button("Sign Out"):
         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
 
@@ -197,16 +210,7 @@ elif st.session_state.next_page == 'dashboard_page':
                     st.session_state.modified_job_posting = True  
 
                     job_file = BytesIO(updated_job_text.encode('utf-8'))
-                    job_file.name = "job_posting.txt"
-
-                    api_url = "http://127.0.0.1:8000/api/upload/job-description"  # Replace with actual API URL
-                    response = requests.post(api_url, files={"file": (job_file.name, job_file, "text/plain")})
-                    job_file.close
-
-                    if response.status_code == 200:
-                        st.success("Job description successfully sent to the API.")
-                    else:
-                        st.error(f"API responded with {response.status_code}: {response.text}")               
+                    job_file.name = "job_posting.txt"              
 
                     st.rerun()   
 
@@ -217,154 +221,356 @@ elif st.session_state.next_page == 'dashboard_page':
         if st.session_state.get("processed_job_text"):
             st.markdown("---")
             if st.button(":arrow_right: Proceed to Resume Upload"):
-                st.session_state.next_page = 'resume_page'
-                st.rerun()
+
+                if "job_description" in st.session_state and "userid" in st.session_state:
+                    api_url = f"{API_BASE_URL}/jobs/"
+
+                    payload = {
+                        "job_text": st.session_state.processed_job_text,
+                        "user_id": st.session_state.userid  # Supabase Auth User ID
+                    }
+
+                    response = requests.post(api_url, json=payload)
+                    if response.ok:
+                        job_data = response.json()["job"]
+                        st.session_state.job_id = job_data["id"]  # Save for resume upload
+                        st.success("Job description successfully stored in Supabase.")
+                        st.session_state.next_page = 'resume_page'
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to upload job description: {response.text}")
+                else:
+                    st.error("Missing job description or user ID.")
 
 elif st.session_state.next_page == 'resume_page':
 
-    st.sidebar.title(f"Welcome, {st.session_state.username}!")
     st.sidebar.text(f"Email: {st.session_state.useremail}")
+    st.sidebar.text(f"Username: {st.session_state.username}")
+    st.sidebar.text(f"Date: {datetime.date.today().strftime('%B %d, %Y')}")
     if st.sidebar.button("Sign Out"):
         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
 
     # Resume Upload Section
     st.subheader("Upload Resumes")
-    uploaded_resume = st.file_uploader("Upload resumes (ZIP or a folder):", type=["zip"])
+    uploaded_resume = st.file_uploader("Upload resumes (ZIP only):", type=["zip"])
     
     # Replace with actual job id and supabase temporary storage path
     if uploaded_resume:
 
-        job_id = st.session_state.username.replace(" ", "_") + "_job"
-        raw_dir = f"frontend/temp_resumes"
-        zip_path = f"{raw_dir}.zip"
-        extracted_dir = f"frontend/extracted_resumes"
-        csv_output_path = f"frontend/extracted_resumes/{job_id}.csv"
-
-        # Save zip locally
-        with open(zip_path, "wb") as f:
-            f.write(uploaded_resume.getbuffer())
-        st.success(f"Zip saved locally at {zip_path}")
-
-        # Extract resumes
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extracted_dir)
-        st.success(f"Resumes extracted to {extracted_dir}")
-
-        # Store extracted file paths in session for use in submit
+        zip_bytes = BytesIO(uploaded_resume.getvalue())
         extracted_files = []
-        for filename in os.listdir(extracted_dir):
-            filepath = os.path.join(extracted_dir, filename)
-            if os.path.isfile(filepath):
-                with open(filepath, "rb") as f:
-                    file_bytes = f.read()
-                    extracted_files.append((filename, file_bytes))
-        st.session_state.extracted_resumes = extracted_files
 
-    if st.button(":rocket: Submit Resumes"):
-        if not st.session_state.job_description.strip():  # Ensure job description is not empty or whitespace
-            st.error("Please enter or upload a job description before submitting resumes.")
-        elif "extracted_resumes" not in st.session_state or not st.session_state.extracted_resumes:
-            st.error("Please upload and extract resumes first.")
+        # with zipfile.ZipFile(zip_bytes, 'r') as zip_ref:
+        #     for file_info in zip_ref.infolist():
+        #         if file_info.filename.endswith('.pdf'):
+        #             with zip_ref.open(file_info) as file:
+        #                 pdf_bytes = file.read()
+        #                 extracted_files.append((file_info.filename, BytesIO(pdf_bytes)))
+        #         else:
+        #             st.warning(f"Skipped non-PDF file: {file_info.filename}")
+
+        with zipfile.ZipFile(zip_bytes, 'r') as zip_ref:
+            for file_info in zip_ref.infolist():
+                filename = file_info.filename
+
+                # Skip directories, hidden files, and non-PDFs
+                if (
+                    file_info.is_dir() or
+                    filename.startswith("__MACOSX") or
+                    filename.endswith(".DS_Store") or
+                    not filename.lower().endswith(".pdf")
+                ):
+                    st.warning(f"Skipped non-PDF or system file: {filename}")
+                    continue
+
+                with zip_ref.open(file_info) as file:
+                    pdf_bytes = file.read()
+                    extracted_files.append((filename, BytesIO(pdf_bytes)))
+
+        if not extracted_files:
+            st.error("No PDF files found in the uploaded ZIP.")
         else:
-            with st.spinner("Sending resumes to resume ranking API..."):
-                api_url = "http://127.0.0.1:8000/api/upload/resumes"  # Replace with actual API URL
+            st.session_state.extracted_resumes = extracted_files
+            st.success(f"{len(extracted_files)} PDF resumes extracted successfully.")
+        
+        if st.button(":rocket: Submit Resumes"):
+            if not st.session_state.get("job_id"):
+                st.error("Missing job ID. Please make sure the job description was uploaded.")
+            elif "extracted_resumes" not in st.session_state or not st.session_state.extracted_resumes:
+                st.error("Please upload and extract resumes first.")
+            else:
+                with st.spinner("Sending resumes to resume ranking API..."):
+                    api_url = f"{API_BASE_URL}/jobs/{st.session_state.job_id}/resumes"
 
-                # Prepare POST files list
-                files = [("files", (fname, fobj, "application/octet-stream")) for fname, fobj in st.session_state.extracted_resumes]
+                    files = [
+                        ("files", (fname, fobj, "application/octet-stream"))
+                        for fname, fobj in st.session_state.extracted_resumes
+                    ]
 
-                try:
-                    response = requests.post(api_url, files=files)
-                    for _, fobj, _ in files:
-                        fobj.close()  # Close file handles after request
-                    
-                    if response.status_code == 200:
-                        st.success("Resumes successfully submitted to the API.")                
-                    else:
-                        st.error(f"API responded with {response.status_code}: {response.text}")  
-                except Exception as e:
+                    try:
+                        response = requests.post(api_url, files=files)
+                        if response.ok:
+                            st.success("Resumes successfully submitted and stored in Supabase.")
+                            public_urls = response.json().get("public_urls", [])
+                            st.session_state.resume_public_urls = public_urls
+                            st.session_state.next_page = 'results_page'
+                            st.session_state.show_results = True
+                            st.rerun()
+                        else:
+                            st.error(f"API responded with {response.status_code}: {response.text}")
+                    except Exception as e:
                         st.error(f"Failed to send resumes to API: {e}")
 
-            st.spinner('Processing your data...')
-            st.session_state.next_page = 'results_page'
-            st.session_state.show_results = True
-            st.rerun()
-
-# Results Section
 elif st.session_state.next_page == 'results_page' and st.session_state.show_results:
-    
+
     st.sidebar.text(f"Email: {st.session_state.useremail}")
+    st.sidebar.text(f"Username: {st.session_state.username}")
+    st.sidebar.text(f"Date: {datetime.date.today().strftime('%B %d, %Y')}")
     if st.sidebar.button("Sign Out"):
         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
 
-    st.subheader("Best Resume Matches for the Job Description \n")
-    
-    # Show all extracted resumes without ranking logic
-    for filename, file_content in st.session_state.extracted_resumes:
-        col1, col2 = st.columns([4, 1])  # Adjust column width (more space for text, less for button)
-        with col1:
-            st.write(f"**{filename}**")
-        with col2:
-            st.download_button(
-                label=":floppy_disk:",  
-                data=file_content,
-                file_name=filename,
-                mime="application/octet-stream",
-                key=f"download_{filename}"
-            )
-        
-    col_next, col_back = st.columns([2, 2])
+    st.markdown("# **Best Resume Matches for the Job Description**")
 
+    job_id = st.session_state.job_id
+    user_id = st.session_state.userid
+    bucket_name = GCP_BUCKET
+
+    job_api = f"{API_BASE_URL}/jobs/{job_id}"
+    resumes_api = f"{API_BASE_URL}/jobs/{job_id}/resumes"
+
+    # Polling logic
+    status_placeholder = st.empty()
+    status_placeholder.info("⏳ Waiting for resume ranking to complete...")
+    while True:
+        try:
+            job_res = requests.get(job_api)
+            resumes_res = requests.get(resumes_api)
+
+            if not job_res.ok or not resumes_res.ok:
+                st.error("Failed to fetch job/resumes info. Retrying...")
+                time.sleep(15)
+                continue
+
+            job_data = job_res.json()["job"]
+            resumes_data = resumes_res.json()["resumes"]
+
+            if job_data["user_id"] != user_id:
+                st.error("You are not authorized to view this job.")
+                st.stop()
+
+            resume_statuses = [r["status"] for r in resumes_data]
+            if all(s not in [-2, 0] for s in resume_statuses) and job_data["status"] == 1:
+                break
+
+        except Exception as e:
+            st.warning(f"Error polling APIs: {e}")
+        time.sleep(15)
+
+    status_placeholder.empty()    
+    st.success("Resume ranking complete!")
+
+    # Categorize and sort
+    ranked_resumes = sorted([r for r in resumes_data if r["status"] > 0], key=lambda x: x["status"])
+    unfit_resumes = [r for r in resumes_data if r["status"] == -1]
+
+    def get_resume_file_by_id(resume_id):
+        # List all blobs in the folder
+        blobs = bucket.list_blobs(prefix=f"resumes/{job_id}/")
+        for blob in blobs:
+            file_name = blob.name.split("/")[-1]
+            if file_name.startswith(f"{resume_id}_"):
+                actual_name = file_name.split(f"{resume_id}_", 1)[1]
+                return blob.download_as_bytes(), actual_name
+        return None, None 
+
+
+    # Display table headers
+    col_name, col_rank, col_download = st.columns([4, 1, 2])
+    with col_name:
+        st.markdown("### **Resume Name**")
+    with col_rank:
+        st.markdown("### **Label**")
+    with col_download:
+        st.markdown("### **Download**")
+
+    # Display each resume row
+    for resume in ranked_resumes:
+        resume_bytes, resume_name = get_resume_file_by_id(resume["id"])
+        if resume_bytes and resume_name:
+            col_name, col_rank, col_download = st.columns([4, 1, 2])
+            with col_name:
+                st.markdown(resume_name)
+            with col_rank:
+                st.markdown(f"Rank: {resume['status']}")
+            with col_download:
+                st.download_button(
+                    label="📄 Download",
+                    data=resume_bytes,
+                    file_name=resume_name,
+                    mime="application/pdf",
+                    key=f"download_{resume['id']}"
+                )
+
+    # Display Unfit Resumes
+    st.markdown("# **Unfit Resumes**")
+
+    # Display table headers
+    col_name, col_rank, col_download = st.columns([4, 1, 2])
+    with col_name:
+        st.markdown("### **Resume Name**")
+    with col_rank:
+        st.markdown("### **Label**")
+    with col_download:
+        st.markdown("### **Download**")
+
+    for resume in unfit_resumes:
+        resume_bytes, resume_name = get_resume_file_by_id(resume["id"])
+        if resume_bytes and resume_name:
+            col_name, col_rank, col_download = st.columns([4, 1, 2])
+            with col_name:
+                st.markdown(resume_name)
+            with col_rank:
+                st.markdown("Unfit")
+            with col_download:
+                st.download_button(
+                    label="📄 Download",
+                    data=resume_bytes,
+                    file_name=resume_name,
+                    mime="application/pdf",
+                    key=f"download_unfit_{resume['id']}"
+                )
+
+    # Navigation
+    col_next, col_back = st.columns([2, 2])
     with col_next:
         if st.button("📋 Continue to Feedback"):
             st.session_state.next_page = "feedback_page"
             st.rerun()
-    
     with col_back:
         if st.button("Back to Upload Page"):
             st.session_state.next_page = 'dashboard_page'
             st.rerun()
 
+
 elif st.session_state.next_page == "feedback_page":
+
     st.sidebar.text(f"Email: {st.session_state.useremail}")
+    st.sidebar.text(f"Username: {st.session_state.username}")
+    st.sidebar.text(f"Date: {datetime.date.today().strftime('%B %d, %Y')}")
     if st.sidebar.button("Sign Out"):
         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
+        st.rerun()
 
     st.sidebar.title(f"Thanks for visiting, {st.session_state.username}!")
-    st.title("📋 We value your feedback")
+    st.title("We value your feedback")
 
-    st.markdown("Please rate your experience with Resumatrix \n")
+    job_id = st.session_state.job_id
+    user_id = st.session_state.userid
 
-    feedback_questions = {
-        "job_clarity": "How clear was the job posting after editing?",
-        "resume_relevance": "Was the resume ranking relevant to the job description?",
-        "system_satisfaction": "Did the system meet your expectations?",
-        "interface_usability": "How easy was it to use the interface?",
-        "recommendation_likelihood": "How likely are you to recommend this tool?"
-    }
-
-    responses = {}
-
-    for key, question in feedback_questions.items():
-        responses[key] = st.select_slider(question, options=[1, 2, 3, 4, 5], value=1)
-
-    additional_comments = st.text_area("Any other suggestions or comments?")
-
-    if st.button("📨 Submit Feedback"):
-        feedback_payload = {
-            "username": st.session_state.username,
-            "useremail": st.session_state.useremail,
-            "job_id": st.session_state.username.replace(" ", "_") + "_job",
-            "responses": responses,
-            "comments": additional_comments
-        }
-
-    api_url = "http://127.0.0.1:8000/api/feedback/submit"  # Replace with your actual feedback endpoint
+    resumes_api = f"{API_BASE_URL}/jobs/{job_id}/resumes"
+    feedback_api = f"{API_BASE_URL}/feedback/update"
 
     try:
-        response = requests.post(api_url, json=feedback_payload)
-        if response.status_code == 200:
-            st.success("✅ Thank you for your feedback!")
-        else:
-            st.error(f"API responded with {response.status_code}: {response.text}")
-    except Exception as e:
-        st.error(f"Failed to send feedback: {e}")
+        resumes_res = requests.get(resumes_api)
+        resumes_data = resumes_res.json()["resumes"]
+    except:
+        st.error("Could not fetch resumes for feedback.")
+        st.stop()
+
+    ranked_resumes = [r for r in resumes_data if r["status"] > 0]
+    unfit_resumes = [r for r in resumes_data if r["status"] == -1]
+
+    # Sample 3 from each
+    if "sampled_ranked" not in st.session_state:
+        st.session_state.sampled_ranked = random.sample(ranked_resumes, min(3, len(ranked_resumes)))
+
+    if "sampled_unfit" not in st.session_state:
+        st.session_state.sampled_unfit = random.sample(unfit_resumes, min(3, len(unfit_resumes)))
+
+    def get_resume_file_by_id(resume_id):
+        blobs = bucket.list_blobs(prefix=f"resumes/{job_id}/")
+        for blob in blobs:
+            file_name = blob.name.split("/")[-1]
+            if file_name.startswith(f"{resume_id}_"):
+                actual_name = file_name.split(f"{resume_id}_", 1)[1]
+                return blob.download_as_bytes(), actual_name
+        return None, None
+    
+    st.markdown("## **Review Ranked Resumes**")
+    st.markdown("Were the ranked resumes a good fit for the job description uploaded?")
+
+    sampled_ranked = st.session_state.sampled_ranked
+    sampled_unfit = st.session_state.sampled_unfit
+
+    ranked_feedback = {}
+    for resume in sampled_ranked:
+        resume_bytes, resume_name = get_resume_file_by_id(resume["id"])
+        if resume_bytes:
+            col1, col2, col3 = st.columns([4, 1.5, 1.5])
+            with col1:
+                st.markdown(create_download_link(resume_bytes, resume_name), unsafe_allow_html=True)
+            with col2:
+                ranked_feedback[f"{resume['id']}_fit"] = st.checkbox("✅ Good Fit", key=f"fit_ranked_{resume['id']}")
+            with col3:
+                ranked_feedback[f"{resume['id']}_no_fit"] = st.checkbox("❌ No Fit", key=f"no_fit_ranked_{resume['id']}")
+    
+    st.markdown("---")
+
+    st.markdown("# **Review Unfit Resumes**")
+    st.markdown("Were the unfit resumes not a good fit for the job description uploaded?")
+
+    unfit_feedback = {}
+    for resume in sampled_unfit:
+        resume_bytes, resume_name = get_resume_file_by_id(resume["id"])
+        if resume_bytes:
+            col1, col2, col3 = st.columns([4, 1.5, 1.5])
+            with col1:
+                st.markdown(create_download_link(resume_bytes, resume_name), unsafe_allow_html=True)
+            with col2:
+                unfit_feedback[f"{resume['id']}_fit"] = st.checkbox("✅ Good Fit", key=f"fit_unfit_{resume['id']}")
+            with col3:
+                unfit_feedback[f"{resume['id']}_no_fit"] = st.checkbox("❌ No Fit", key=f"no_fit_unfit_{resume['id']}")
+
+    
+
+    st.markdown("---")
+
+    col_submit, col_skip = st.columns([2, 2])
+
+    with col_submit:
+        if st.button("📨 Submit Feedback"):
+            feedback_payload = []
+
+            # Helper to process checkbox states
+            def add_feedback(feedback_dict):
+                for k, v in feedback_dict.items():
+                    resume_id, label = k.split("_", 1)
+                    if v:
+                        feedback_payload.append({
+                            "id": resume_id,
+                            "feedback_label": 1 if label == "fit" else -1
+                        })
+
+            add_feedback(ranked_feedback)
+            add_feedback(unfit_feedback)
+
+            if feedback_payload:
+                try:
+                    res = requests.put(resumes_api, json={"resumes": feedback_payload})
+                    if res.status_code == 200:
+                        st.success("Feedback submitted successfully!")
+                        st.session_state.pop("sampled_ranked", None)
+                        st.session_state.pop("sampled_unfit", None)
+                        st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
+                        st.rerun()
+                    else:
+                        st.error(f"API Error {res.status_code}: {res.text}")
+                except Exception as e:
+                    st.error(f"Failed to submit feedback: {e}")
+            else:
+                st.warning("No feedback selected to submit.")
+
+    with col_skip:
+        if st.button("⏭️ Skip Feedback"):
+            st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
+            st.rerun()

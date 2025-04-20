@@ -5,11 +5,12 @@ USER root
 # Install system dependencies and clean up in a single layer
 RUN apt-get update && apt-get install -y \
     python3 python3-pip python3-venv python3-full \
-    docker.io curl apt-transport-https ca-certificates gnupg jq \
+    docker.io curl apt-transport-https ca-certificates gnupg jq sudo \
     && rm -rf /var/lib/apt/lists/* \
     && curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose \
     && chmod +x /usr/local/bin/docker-compose \
     && usermod -aG docker jenkins \
+    && echo "jenkins ALL=(ALL) NOPASSWD: /usr/bin/docker, /usr/bin/chmod" >> /etc/sudoers \
     && python3 -m venv /opt/venv
 
 # Install Google Cloud SDK
@@ -36,7 +37,8 @@ RUN mkdir -p /mlflow/artifacts /mlflow/mlruns /var/log/supervisor \
 RUN jenkins-plugin-cli --plugins \
     workflow-aggregator git docker-workflow email-ext \
     credentials-binding pipeline-utility-steps \
-    google-oauth-plugin google-storage-plugin google-compute-engine
+    google-oauth-plugin google-storage-plugin google-compute-engine \
+    github github-branch-source github-api
 
 # Copy startup script
 COPY start-services.sh /usr/local/bin/start-services.sh
