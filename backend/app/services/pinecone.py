@@ -1,10 +1,11 @@
-from typing import Any, Optional, Dict
-from pinecone import ServerlessSpec, CloudProvider, GcpRegion
+from typing import Optional, Dict
+from pinecone import AwsRegion, ServerlessSpec, CloudProvider
 from pinecone.grpc import PineconeGRPC
+from pinecone.grpc.pinecone import GRPCIndex
 from app.models import *
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('uvicorn.error')
 
 class PineconeService:
     """Manages interactions with Pinecone Vector database"""
@@ -15,14 +16,16 @@ class PineconeService:
         """
         self.client = PineconeGRPC(api_key=key)
         logger.info("PineconeGRPC client initialized")
+        self.ensure_index_exists("resume-index")
+        self.index = self.get_index("resume-index")
 
     def ensure_index_exists(
             self, 
             index_name: str,
             dimension: int = 768,
             metric: str = "cosine",
-            cloud = CloudProvider.GCP,
-            region = GcpRegion.US_CENTRAL1):
+            cloud = CloudProvider.AWS,
+            region = AwsRegion.US_EAST_1):
 
         """
         Ensure that the specified index exists, creating it if necessary.
@@ -50,7 +53,7 @@ class PineconeService:
         else:
             logger.info(f"Index {index_name} already exists")
 
-    def get_index(self, index_name: str, host: Optional[str] = None) -> Any:
+    def get_index(self, index_name: str, host: Optional[str] = None) -> GRPCIndex:
         """
         Get a reference to the specified index.
         
@@ -68,7 +71,7 @@ class PineconeService:
             
     def upsert_embeddings(
             self,
-            index,embeddings: Dict[str, List[Dict]],
+            embeddings: Dict[str, List[Dict]],
             batch_size: int = 100) -> None:
         """
         Upsert embeddings to the specified index in batches.
@@ -85,7 +88,7 @@ class PineconeService:
             for i in range(0, total_vectors, batch_size):
                 batch = namespace_data[i:i+batch_size]
                 try:
-                    index.upsert(
+                    self.index.upsert(
                         vectors=batch,
                         namespace=namespace
                     )
