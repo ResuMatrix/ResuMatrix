@@ -28,7 +28,7 @@ def train_xgboost_model(X_train, y_train, X_test, y_test):
 
         conf_matrix = confusion_matrix(y_test, y_pred)
         mlflow.log_metrics({"confusion_matrix": conf_matrix})
-        #test 2
+        #test 3
 
         # Save the model
         mlflow.sklearn.log_model(model, "Xgboost_with_similarity_model")
