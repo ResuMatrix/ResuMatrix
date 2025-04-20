@@ -22,8 +22,8 @@ pipeline {
         GCP_PROJECT_ID = credentials('GCP_PROJECT_ID')
         GCP_BUCKET_NAME = credentials('GCP_BUCKET_NAME')
         GOOGLE_APPLICATION_CREDENTIALS = credentials('GOOGLE_APPLICATION_CREDENTIALS')
-        EMAIL_ADDRESS = credentials('EMAIL_ADDRESS')
-
+        //EMAIL_ADDRESS = credentials('EMAIL_ADDRESS')
+        EMAIL_ADDRESS = "pranaysaggar6@gmail.com"
         // Additional environment variables
         ARTIFACT_REGISTRY_REPO = credentials('ARTIFACT_REGISTRY_REPO')
         WORKSPACE_DIR = "retraining_pipeline"
