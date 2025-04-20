@@ -1,11 +1,12 @@
 from typing import List
-from fastapi import APIRouter, HTTPException, UploadFile, Depends, Body
+from fastapi import APIRouter, HTTPException, UploadFile, Depends, Body, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 import pymupdf
 from app.services.database import DatabaseService
+from app.services.resume_processing import ResumeProcessingService
 from app.services.storage import StorageService
-from app.api.deps import get_db_service, get_storage_service
+from app.api.deps import get_db_service, get_storage_service, get_resume_processing_service
 import logging
 import io
 
@@ -137,4 +138,23 @@ async def get_all_jobs_by_user_id(
             return JSONResponse(content={"jobs": jsonable_encoder(jobs)})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@router.post("/{job_id}/rank")
+async def trigger_ranking_process(
+        job_id: str,
+        background_tasks: BackgroundTasks,
+        db_service: DatabaseService = Depends(get_db_service),
+        res_processing_service: ResumeProcessingService = Depends(get_resume_processing_service)):
+    try:
+        job = await db_service.get_job(job_id)
+        resumes = await db_service.get_resumes_with_job_id(job_id)
+        filtered_resumes = [resume for resume in resumes if resume and resume.status == 0]
+        background_tasks.add_task(res_processing_service.run_ranking, job_id, job.job_text, filtered_resumes)
+        return JSONResponse(content="", status_code=202)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+
+
 

@@ -4,7 +4,7 @@ from app.core.config import settings
 from app.models import *
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('uvicorn.error')
 
 class DatabaseService:
     def __init__(self, url: str, key:str):
