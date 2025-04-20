@@ -61,7 +61,7 @@ class PubSubFinalizeSensor(PubSubPullSensor):
             print(msg.attributes.get("eventType"))
             if getattr(msg, "attributes", {}).get("eventType") == "OBJECT_FINALIZE":
                 subdir = msg.attributes['objectId'].split('/')[1]
-                if subdir in seen:
+                if subdir in seen or subdir in ["test_embeddings_20250420_104122.npz", "metadata_20250420_104122.json"]:
                     continue
                 # log.info(f"New subdirectory: {subdir}")
                 seen.append(subdir)

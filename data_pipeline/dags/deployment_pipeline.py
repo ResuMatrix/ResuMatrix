@@ -18,13 +18,13 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.email import EmailOperator
+from airflow.providers.docker.operators.docker import DockerOperator
 from mod_pub_sub import PubSubFinalizeSensor
 from airflow.utils.log.logging_mixin import LoggingMixin
-from google.cloud import storage
 from airflow.providers.google.cloud.hooks.gcs import GCSHook
 import pandas as pd
-import numpy as np
 import io
+from docker.types import Mount
 from urllib.parse import urlparse
 
 # Using Airflow's built-in logger
@@ -44,6 +44,8 @@ default_args = {
 
 BUCKET_NAME = "us-east1-mlops-dev-8ad13d78-bucket"
 SEEN_PATH = "resumes/seen_directories.txt"
+
+# HOST_DATA = os.path.join(os.environ['GCP_JSON_PATH'], 'data')
 
 # os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -167,10 +169,15 @@ def load_data_for_fit_pred(ti, **kwargs):
     bucket = client.get_bucket(BUCKET_NAME)
     # dag_run_conf = kwargs.get('dag_run').conf or {}
     csv_file_path = ti.xcom_pull(task_ids="handle_notification_task")
-    csv_file_Path = Path(csv_file_path)
-    blob_name = csv_file_Path.parts[2:]
-    blob_name = "/".join(blob_name)
-    parent_directory = os.path.dirname(csv_file_path)
+    # form: gs://us-east1-mlops-dev-8ad13d78-bucket/resumes/0f54f3e0-5a58-4996-b7ed-abe08f34969c/0f54f3e0-5a58-4996-b7ed-abe08f34969c.csv
+    # csv_file_Path = Path(csv_file_path)
+    # blob_name = csv_file_Path.parts[3:]
+    # blob_name = "/".join(blob_name)
+    parts = csv_file_path.split("/")
+    i = parts.index("resumes")
+    parent_directory = "/".join(parts[i : i + 2])
+    blob_name = "/".join(parts[i:])
+    log.info(f"Parent directory: {parent_directory}")
     job_id = csv_file_path.rstrip("/").split("/")[-2]
     API_BASE_URL = os.getenv("RESUMATRIX_API_URL", "http://host.docker.internal:8000/api")
     jd_text = ""
@@ -198,7 +205,6 @@ def load_data_for_fit_pred(ti, **kwargs):
         raise ValueError("No text file found for Job Description or the file is empty.")
 
     resume_df['job_description_text'] = jd_text
-    resume_df.rename({"resume": "resume_text"})
     log.info("Resume DF shape: ")
     log.info(resume_df.shape)
 
@@ -206,19 +212,21 @@ def load_data_for_fit_pred(ti, **kwargs):
 
     # Define your GCS bucket and blob name
     destination_blob_name = f"{parent_directory}/resume_jd_data.csv"  # Replace with desired blob path
+    log.info(f"Destination blob name: {destination_blob_name}")
 
     blob = bucket.blob(destination_blob_name)
     blob.upload_from_string(csv_data, content_type='text/csv')
 
     # Construct a GCS path that can be used by downstream tasks
-    gcs_path = f"gs://{BUCKET_NAME}/{destination_blob_name}"
+    gcs_path = f"{destination_blob_name}"
 
     ti.xcom_push(key="data_path", value=gcs_path)
 
 def gen_embeddings(ti, **kwargs):
     from data_processing.data_preprocessing import extract_embeddings
+    from pathlib import Path
     gcs_path = ti.xcom_pull(key="data_path", task_ids="load_data_for_fit_pred_task")
-    # Path of the form: "gs://bucket_name/resumes/job_id/resume_jd_data.csv"
+    # Path of the form: "gs://us-east1-mlops-dev-8ad13d78-bucket/resumes/0f54f3e0-5a58-4996-b7ed-abe08f34969c/resume_jd_data.csv"
     if not gcs_path:
         raise ValueError("No GCS path found in XCom. Check upstream task.")
     log.info("GCS Path from previous task: ")
@@ -244,24 +252,39 @@ def gen_embeddings(ti, **kwargs):
     blob.delete()
 
     X_test = extract_embeddings(resume_df, data_type="deployment")
-    buffer = io.BytesIO()
-    np.save(buffer, X_test)
-    buffer.seek(0)
+    csv_data = X_test.to_csv(index=False)
+    csv_file_Path = Path(gcs_path)
+    blob_name = csv_file_Path.parts[2:]
+    blob_name = "/".join(blob_name)
+    parent_directory = os.path.dirname(gcs_path)
+    # job_id = gcs_path.rstrip("/").split("/")[-2]
+    destination_blob_name = f"{parent_directory}/resume_jd_data.csv"  # Replace with desired blob path
 
-    destination_blob_name = f"{os.path.dirname(blob_name).split('/', 3)[-1]}/embeddings_np_array.npy"  # Replace with desired blob path
-    log.info(f"Destination_blob_name: {destination_blob_name}")
-
-    # Initialize GCS client and upload the file from the buffer
-    client = storage.Client()
-    bucket = client.get_bucket(BUCKET_NAME)
     blob = bucket.blob(destination_blob_name)
+    blob.upload_from_string(csv_data, content_type='text/csv')
 
-    # Upload the NumPy binary data to GCS
-    blob.upload_from_file(buffer, content_type="application/octet-stream")
+    # Construct a GCS path that can be used by downstream tasks
+    # gcs_path = f"gs://{BUCKET_NAME}/{destination_blob_name}"
 
-    # Construct the GCS path (URI) to be passed via XCom
-    gcs_path = f"{destination_blob_name}"
-    ti.xcom_push(key="numpy_path", value=gcs_path)
+    ti.xcom_push(key="data_path", value=destination_blob_name)
+    # buffer = io.BytesIO()
+    # np.save(buffer, X_test)
+    # buffer.seek(0)
+    #
+    # destination_blob_name = f"{os.path.dirname(blob_name).split('/', 3)[-1]}/embeddings_np_array.npy"  # Replace with desired blob path
+    # log.info(f"Destination_blob_name: {destination_blob_name}")
+    #
+    # # Initialize GCS client and upload the file from the buffer
+    # client = storage.Client()
+    # bucket = client.get_bucket(BUCKET_NAME)
+    # blob = bucket.blob(destination_blob_name)
+    #
+    # # Upload the NumPy binary data to GCS
+    # blob.upload_from_file(buffer, content_type="application/octet-stream")
+    #
+    # # Construct the GCS path (URI) to be passed via XCom
+    # gcs_path = f"{destination_blob_name}"
+    # ti.xcom_push(key="numpy_path", value=gcs_path)
 
 
 # def extract_text_from_pdf():
@@ -341,6 +364,41 @@ with (DAG(
         provide_context=True
     )
 
+    run_inference_task = DockerOperator(
+        task_id='run_inference_task',
+        image='us-east1-docker.pkg.dev/awesome-nimbus-452221-v2/resume-fit-supervised/xgboost_and_cosine_similarity:20250420_031643',
+        api_version='auto',
+        entrypoint='/bin/bash',
+        command=[
+        '-c',
+        'python /app/scripts/inference.py '
+        '--input /data/input.json '
+        '--output /data/output.json '
+        '&& sleep infinity'
+        ],
+        auto_remove='never',
+        tty=True,
+        docker_url='unix://var/run/docker.sock',
+        network_mode='bridge',
+        mounts=[
+            Mount(source="data_volume",
+                  target='/data',
+                  type='volume'),
+            Mount(source=os.environ['GCP_JSON_PATH'],
+                  target='/etc/secrets/gcp_key.json',
+                  type='bind',
+                  read_only=True),
+            # ${AIRFLOW_PROJ_DIR:-.}/scripts:/opt/airflow/scripts
+            Mount(source="scripts_volume",
+                  target="/app/scripts",
+                  type="volume")
+        ],
+        environment={"EMBEDDINGS_FILE_PATH": "{{ ti.xcom_pull(task_ids='gen_embeddings_task', key='data_path') }}/",
+                     'GOOGLE_APPLICATION_CREDENTIALS': '/etc/secrets/gcp_key.json',
+                     'GCP_PROJECT_ID': os.environ['GCP_PROJECT_ID']},
+        dag=dag,
+    )
+
     # embed_task = PythonOperator(
     #     task_id="embedding_generation_task",
     #     python_callable=generate_embeddings,
@@ -386,5 +444,5 @@ with (DAG(
     )
 
     # set the task dependencies
-    pull >> handle_notification_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> end_task >> [email_success, email_failure]
+    pull >> handle_notification_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> run_inference_task >> end_task >> [email_success, email_failure]
 
