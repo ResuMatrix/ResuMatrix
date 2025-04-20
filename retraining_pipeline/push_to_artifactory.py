@@ -52,40 +52,117 @@ def build_and_push_docker_image(model_path):
         # Get environment variables
         gcp_project_id = os.environ.get("GCP_PROJECT_ID")
         artifact_registry_repo = os.environ.get("ARTIFACT_REGISTRY_REPO")
+        gcp_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
 
-        # For demo purposes, we'll just log what we would do in a real scenario
-        logger.info("DEMO MODE: Simulating Docker build and push")
-        logger.info(f"Would build Docker image with model: {model_path}")
-        logger.info(f"Would push to Artifact Registry: {artifact_registry_repo}")
+        # Validate required environment variables
+        if not gcp_project_id:
+            logger.error("GCP_PROJECT_ID environment variable not set.")
+            return False
+
+        if not artifact_registry_repo:
+            logger.error("ARTIFACT_REGISTRY_REPO environment variable not set.")
+            return False
+
+        if not gcp_credentials:
+            logger.error("GOOGLE_APPLICATION_CREDENTIALS environment variable not set.")
+            return False
+
+        # Check if the credentials file exists
+        if not os.path.exists(gcp_credentials):
+            logger.error(f"GCP credentials file not found at: {gcp_credentials}")
+            return False
 
         # Create a timestamp for the image tag
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         image_tag = f"{artifact_registry_repo}:{timestamp}"
         logger.info(f"Generated image tag: {image_tag}")
 
-        # In a real scenario, we would:
         # 1. Copy the model file to the current directory
+        logger.info(f"Copying model file: {model_path}")
+        model_filename = os.path.basename(model_path)
+        copy_command = f"cp {model_path} ."
+        process = subprocess.run(copy_command, shell=True, capture_output=True, text=True)
+        if process.returncode != 0:
+            logger.error(f"Error copying model file: {process.stderr}")
+            return False
+        logger.info(f"Successfully copied model file to current directory")
+
         # 2. Create a Dockerfile
-        # 3. Build the Docker image
+        logger.info("Creating Dockerfile")
+        with open("ModelDockerfile", "w") as f:
+            f.write(f"""FROM python:3.12-slim
+
+# Set working directory
+WORKDIR /app
+
+# Copy the model file
+COPY {model_filename} /app/model.joblib
+
+# Install dependencies
+RUN pip install --no-cache-dir joblib scikit-learn xgboost numpy
+
+# Create an entrypoint script
+RUN echo '#!/bin/bash\\necho "Model container is running. Use this container as a base for inference."' > /app/entrypoint.sh && \\
+    chmod +x /app/entrypoint.sh
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+""")
+        logger.info("Successfully created Dockerfile")
+
+        # 3. Authenticate with Google Cloud
+        logger.info("Authenticating with Google Cloud")
+        auth_command = f"gcloud auth activate-service-account --key-file={gcp_credentials}"
+        process = subprocess.run(auth_command, shell=True, capture_output=True, text=True)
+        if process.returncode != 0:
+            logger.error(f"Error authenticating with Google Cloud: {process.stderr}")
+            return False
+        logger.info("Successfully authenticated with Google Cloud")
+
         # 4. Configure Docker for Google Artifact Registry
-        # 5. Push the Docker image
-        # 6. Clean up temporary files
+        logger.info("Configuring Docker for Google Artifact Registry")
+        # Extract the registry host from the artifact_registry_repo
+        registry_host = artifact_registry_repo.split('/')[0]  # e.g., us-east1-docker.pkg.dev
+        configure_command = f"gcloud auth configure-docker {registry_host} --quiet"
+        process = subprocess.run(configure_command, shell=True, capture_output=True, text=True)
+        if process.returncode != 0:
+            logger.error(f"Error configuring Docker for Google Artifact Registry: {process.stderr}")
+            return False
+        logger.info("Successfully configured Docker for Google Artifact Registry")
 
-        # For demo purposes, we'll just simulate these steps
-        logger.info("DEMO MODE: Simulating Docker build process")
-        logger.info(f"1. Would copy model file: {model_path}")
-        logger.info("2. Would create a Dockerfile")
-        logger.info(f"3. Would build Docker image: {image_tag}")
-        logger.info("4. Would configure Docker for Google Artifact Registry")
-        logger.info(f"5. Would push Docker image: {image_tag}")
-        logger.info("6. Would clean up temporary files")
+        # 5. Build the Docker image
+        logger.info(f"Building Docker image: {image_tag}")
+        build_command = f"docker build -f ModelDockerfile -t {image_tag} ."
+        process = subprocess.run(build_command, shell=True, capture_output=True, text=True)
+        if process.returncode != 0:
+            logger.error(f"Error building Docker image: {process.stderr}")
+            return False
+        logger.info("Successfully built Docker image")
 
-        # Save the image tag for reference
+        # 6. Push the Docker image to Google Artifact Registry
+        logger.info(f"Pushing Docker image to Google Artifact Registry: {image_tag}")
+        push_command = f"docker push {image_tag}"
+        process = subprocess.run(push_command, shell=True, capture_output=True, text=True)
+        if process.returncode != 0:
+            logger.error(f"Error pushing Docker image to Google Artifact Registry: {process.stderr}")
+            return False
+        logger.info("Successfully pushed Docker image to Google Artifact Registry")
+
+        # 7. Save the image tag for reference
         with open(os.path.join("model_registry", "latest_image.txt"), "w") as f:
             f.write(image_tag)
         logger.info(f"Saved image tag to model_registry/latest_image.txt")
 
-        # Remove the indicator file
+        # 8. Clean up temporary files
+        logger.info("Cleaning up temporary files")
+        cleanup_command = f"rm ModelDockerfile {model_filename}"
+        process = subprocess.run(cleanup_command, shell=True, capture_output=True, text=True)
+        if process.returncode != 0:
+            logger.warning(f"Error cleaning up temporary files: {process.stderr}")
+            # Continue anyway, this is not critical
+        else:
+            logger.info("Successfully cleaned up temporary files")
+
+        # 9. Remove the indicator file
         try:
             os.remove(os.path.join("model_registry", "new_model_saved.txt"))
             logger.info("Removed indicator file")
@@ -93,7 +170,7 @@ def build_and_push_docker_image(model_path):
             logger.warning(f"Error removing indicator file: {str(e)}")
             # Continue anyway, this is not critical
 
-        logger.info(f"DEMO MODE: Successfully simulated pushing model to Google Artifact Registry: {image_tag}")
+        logger.info(f"Successfully pushed model to Google Artifact Registry: {image_tag}")
 
         return True
 
@@ -112,21 +189,29 @@ def main():
     logger.info(f"Using GCP project: {gcp_project_id}")
     logger.info(f"Using Artifact Registry repo: {artifact_registry_repo}")
 
-    # For demo purposes, we'll just log the credentials we have
-    if gcp_credentials:
-        logger.info(f"GCP credentials environment variable is set")
+    # Validate required environment variables
+    if not gcp_credentials:
+        logger.error("GOOGLE_APPLICATION_CREDENTIALS environment variable not set.")
+        sys.exit(1)
     else:
-        logger.warning("GOOGLE_APPLICATION_CREDENTIALS not set, but continuing for demo purposes")
+        logger.info(f"Using GCP credentials from: {gcp_credentials}")
+        # Check if the file exists
+        if not os.path.exists(gcp_credentials):
+            logger.error(f"GCP credentials file not found at: {gcp_credentials}")
+            sys.exit(1)
+        logger.info("GCP credentials file exists.")
 
-    if gcp_project_id:
+    if not gcp_project_id:
+        logger.error("GCP_PROJECT_ID environment variable not set.")
+        sys.exit(1)
+    else:
         logger.info(f"Using GCP project ID: {gcp_project_id}")
-    else:
-        logger.warning("GCP_PROJECT_ID not set, but continuing for demo purposes")
 
-    if artifact_registry_repo:
-        logger.info(f"Using Artifact Registry repo: {artifact_registry_repo}")
+    if not artifact_registry_repo:
+        logger.error("ARTIFACT_REGISTRY_REPO environment variable not set.")
+        sys.exit(1)
     else:
-        logger.warning("ARTIFACT_REGISTRY_REPO not set, but continuing for demo purposes")
+        logger.info(f"Using Artifact Registry repo: {artifact_registry_repo}")
 
     # Check if a new model has been saved
     model_path = check_for_new_model()
