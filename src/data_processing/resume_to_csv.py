@@ -1,8 +1,6 @@
-import os
 import pymupdf
 import mammoth
 import csv
-import magic
 from airflow.providers.google.cloud.hooks.gcs import GCSHook
 import io
 
@@ -65,7 +63,7 @@ def resume_pre_processing_gcs(job_id: str,
 
     # 4) upload CSV back to GCS
     csv_data = output.getvalue()
-    destination = f"{folder}/{job_id}.csv"
+    destination = f"{folder}{job_id}.csv"
     dest_blob = bucket.blob(destination)
     dest_blob.upload_from_string(csv_data, content_type='text/csv')
 
