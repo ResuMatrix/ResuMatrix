@@ -5,13 +5,21 @@ set -e
 mkdir -p /mlflow/artifacts /mlflow/mlruns /var/log/supervisor
 chown -R jenkins:jenkins /mlflow
 
-# Ensure Docker socket has correct permissions
-if [ -e /var/run/docker.sock ]; then
-  echo "Setting Docker socket permissions..."
-  chmod 666 /var/run/docker.sock
-  echo "Docker socket permissions updated."
+# Check if we're running in a privileged container
+if grep -q "privileged" /proc/self/status 2>/dev/null; then
+  echo "Running in a privileged container, no need to change Docker socket permissions."
 else
-  echo "Warning: Docker socket not found at /var/run/docker.sock"
+  # Ensure Docker socket has correct permissions
+  if [ -e /var/run/docker.sock ]; then
+    echo "Checking Docker socket permissions..."
+    # Try to change permissions, but don't fail if it doesn't work
+    chmod 666 /var/run/docker.sock 2>/dev/null || {
+      echo "Warning: Could not change Docker socket permissions. Container will continue, but Docker commands may fail."
+      echo "This is expected on macOS. The container should still work if started with --privileged."
+    }
+  else
+    echo "Warning: Docker socket not found at /var/run/docker.sock"
+  fi
 fi
 
 # Start MLflow in the background

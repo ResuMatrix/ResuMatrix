@@ -22,7 +22,14 @@ if ! id jenkins &> /dev/null; then
 fi
 
 echo "Setting Docker socket permissions..."
-chmod 666 /var/run/docker.sock
+chmod 666 /var/run/docker.sock 2>/dev/null || {
+  echo "Warning: Could not change Docker socket permissions."
+  echo "This might be due to Docker Desktop security settings or other restrictions."
+  echo "For Docker Desktop on Mac or Windows, you may need to use a different approach:"
+  echo "1. For Mac: Use docker run with --privileged flag"
+  echo "2. For Windows: Use Docker Desktop settings to enable file sharing"
+  echo "3. For Linux: Make sure you're running with sudo"
+}
 echo "Docker socket permissions updated."
 
 echo "Adding Jenkins user to Docker group..."
