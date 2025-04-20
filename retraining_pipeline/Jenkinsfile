@@ -1,0 +1,76 @@
+pipeline {
+    agent any
+
+    environment {
+        // Load credentials from env_variables.json
+        MLFLOW_TRACKING_URI = credentials('MLFLOW_TRACKING_URI')
+        GCP_PROJECT_ID = credentials('GCP_PROJECT_ID')
+        GCP_BUCKET_NAME = credentials('GCP_BUCKET_NAME')
+        GOOGLE_APPLICATION_CREDENTIALS = credentials('GOOGLE_APPLICATION_CREDENTIALS')
+        EMAIL_ADDRESS = credentials('EMAIL_ADDRESS')
+
+        // Additional environment variables
+        ARTIFACT_REGISTRY_REPO = credentials('ARTIFACT_REGISTRY_REPO')
+        MODEL_OUTPUT_DIR = "model_registry"
+        DATA_DIR = "data"
+    }
+
+    stages {
+        stage('Setup Python Environment') {
+            steps {
+                sh '''
+                python3 -m venv venv
+                . venv/bin/activate
+                pip install --upgrade pip
+                pip install -r requirements.txt
+                '''
+            }
+        }
+
+        stage('Download Data from GCS') {
+            steps {
+                sh '''
+                . venv/bin/activate
+                mkdir -p ${DATA_DIR}
+                python download_from_gcs.py
+                '''
+            }
+        }
+
+        stage('Train Model') {
+            steps {
+                sh '''
+                . venv/bin/activate
+                mkdir -p ${MODEL_OUTPUT_DIR}
+                python run_retraining.py
+                '''
+            }
+        }
+
+        stage('Build and Push Docker Image') {
+            steps {
+                sh '''
+                . venv/bin/activate
+                python push_to_artifactory.py
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            emailext (
+                subject: "Pipeline Success: ${currentBuild.fullDisplayName}",
+                body: "The model retraining pipeline completed successfully. Check MLflow for model metrics.",
+                to: "${EMAIL_ADDRESS}"
+            )
+        }
+        failure {
+            emailext (
+                subject: "Pipeline Failed: ${currentBuild.fullDisplayName}",
+                body: "The model retraining pipeline failed. Please check the Jenkins logs for details.",
+                to: "${EMAIL_ADDRESS}"
+            )
+        }
+    }
+}

@@ -20,11 +20,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Add console handler for better visibility
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-logger.addHandler(console_handler)
-
 def check_for_new_model(model_registry_dir="model_registry"):
     """Check if a new model has been saved."""
     indicator_file = os.path.join(model_registry_dir, "new_model_saved.txt")
@@ -56,18 +51,36 @@ def build_and_push_docker_image(model_path):
     try:
         # Get environment variables
         gcp_project_id = os.environ.get("GCP_PROJECT_ID")
+        artifact_registry_repo = os.environ.get("ARTIFACT_REGISTRY_REPO")
+
         if not gcp_project_id:
             logger.error("GCP_PROJECT_ID environment variable not set.")
             return False
 
+        if not artifact_registry_repo:
+            logger.error("ARTIFACT_REGISTRY_REPO environment variable not set.")
+            return False
+
+        # Extract repository information from ARTIFACT_REGISTRY_REPO
+        # Format: region-docker.pkg.dev/project-id/repository-name/image-name
+        repo_parts = artifact_registry_repo.split('/')
+        if len(repo_parts) < 4:
+            logger.error(f"Invalid ARTIFACT_REGISTRY_REPO format: {artifact_registry_repo}")
+            return False
+
+        registry_host = repo_parts[0]  # e.g., us-east1-docker.pkg.dev
+        repository_name = repo_parts[2]  # e.g., resume-fit-supervised
+        image_name = '/'.join(repo_parts[3:])  # e.g., xgboost_and_cosine_similarity
+
         # Check if the repository exists, if not create it
         logger.info("Checking if Artifact Registry repository exists...")
-        check_repo_cmd = f"gcloud artifacts repositories describe resume-fit-supervised --location=us-east1 --project={gcp_project_id} || gcloud artifacts repositories create resume-fit-supervised --repository-format=docker --location=us-east1 --project={gcp_project_id}"
+        region = registry_host.split('-')[0]  # Extract region (e.g., us-east1)
+        check_repo_cmd = f"gcloud artifacts repositories describe {repository_name} --location={region} --project={gcp_project_id} || gcloud artifacts repositories create {repository_name} --repository-format=docker --location={region} --project={gcp_project_id}"
         subprocess.run(check_repo_cmd, shell=True, check=True)
 
         # Create a temporary directory for the Docker build
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        image_tag = f"us-east1-docker.pkg.dev/{gcp_project_id}/resume-fit-supervised/xgboost_and_cosine_similarity:{timestamp}"
+        image_tag = f"{artifact_registry_repo}:{timestamp}"
 
         # Copy the model file to the current directory
         model_filename = os.path.basename(model_path)
@@ -101,7 +114,7 @@ ENTRYPOINT ["/app/entrypoint.sh"]
 
         # Configure Docker to use Google Artifact Registry
         logger.info("Configuring Docker for Google Artifact Registry")
-        configure_command = f"gcloud auth configure-docker us-east1-docker.pkg.dev"
+        configure_command = f"gcloud auth configure-docker {registry_host}"
         subprocess.run(configure_command, shell=True, check=True)
 
         # Push the Docker image to Google Artifact Registry
@@ -133,10 +146,11 @@ def main():
     # Get environment variables
     gcp_project_id = os.environ.get("GCP_PROJECT_ID")
     gcp_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    artifact_registry_repo = os.environ.get("ARTIFACT_REGISTRY_REPO")
 
-    # Print environment information for debugging
-    logger.info(f"Current working directory: {os.getcwd()}")
-    logger.info(f"GCP_PROJECT_ID: {gcp_project_id}")
+    # Log essential information
+    logger.info(f"Using GCP project: {gcp_project_id}")
+    logger.info(f"Using Artifact Registry repo: {artifact_registry_repo}")
 
     # Ensure GCP credentials are properly set
     if gcp_credentials:

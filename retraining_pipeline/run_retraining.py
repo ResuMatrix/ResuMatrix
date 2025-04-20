@@ -32,11 +32,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Add console handler for better visibility
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-logger.addHandler(console_handler)
-
 def load_embeddings(file_path):
     """Load embeddings from a .npz file."""
     try:
@@ -62,7 +57,7 @@ def get_best_model_metrics():
     """Get the metrics of the best model from MLflow."""
     try:
         # Set up MLflow client
-        client = MlflowClient(tracking_uri=os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000"))
+        client = MlflowClient(tracking_uri=os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5001"))
 
         # Get the experiment ID for XGBoost with Similarity
         experiment = client.get_experiment_by_name("XGBoost Model with Similarity")
@@ -119,19 +114,13 @@ def save_model(model, output_dir="model_registry"):
 def main():
     """Main function to run the retraining pipeline."""
     # Set up environment variables
-    mlflow_uri = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
+    mlflow_uri = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5001")
     gcp_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    gcp_project_id = os.environ.get("GCP_PROJECT_ID")
-    gcp_bucket_name = os.environ.get("GCP_BUCKET_NAME")
     data_dir = os.environ.get("DATA_DIR", "data")
 
-    # Print environment information for debugging
-    logger.info(f"Current working directory: {os.getcwd()}")
-    logger.info(f"Python path: {sys.path}")
-    logger.info(f"GCP_PROJECT_ID: {gcp_project_id}")
-    logger.info(f"GCP_BUCKET_NAME: {gcp_bucket_name}")
-    logger.info(f"DATA_DIR: {data_dir}")
-    logger.info(f"MLFLOW_TRACKING_URI: {mlflow_uri}")
+    # Log essential information
+    logger.info(f"Using MLflow tracking URI: {mlflow_uri}")
+    logger.info(f"Using data directory: {data_dir}")
 
     # Ensure GCP credentials are properly set
     if gcp_credentials:

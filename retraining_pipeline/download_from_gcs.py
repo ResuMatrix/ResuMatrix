@@ -15,11 +15,6 @@ from dotenv import load_dotenv
 dotenv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
 load_dotenv(dotenv_path)
 
-# Set up logging to console as well
-logger = logging.getLogger(__name__)
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-logger.addHandler(console_handler)
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -122,13 +117,10 @@ def main():
     bucket_name = os.environ.get("GCP_BUCKET_NAME", "resumatrix-embeddings")
     output_dir = os.environ.get("OUTPUT_DIR", "data")
     gcp_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    gcp_project_id = os.environ.get("GCP_PROJECT_ID")
 
-    # Print environment information for debugging
-    logger.info(f"Current working directory: {os.getcwd()}")
-    logger.info(f"GCP_BUCKET_NAME: {bucket_name}")
-    logger.info(f"GCP_PROJECT_ID: {gcp_project_id}")
-    logger.info(f"OUTPUT_DIR: {output_dir}")
+    # Log essential information
+    logger.info(f"Using GCP bucket: {bucket_name}")
+    logger.info(f"Saving to output directory: {output_dir}")
 
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
