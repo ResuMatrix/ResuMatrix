@@ -5,12 +5,18 @@ USER root
 # Install system dependencies and clean up in a single layer
 RUN apt-get update && apt-get install -y \
     python3 python3-pip python3-venv python3-full \
-    docker.io curl \
+    docker.io curl apt-transport-https ca-certificates gnupg \
     && rm -rf /var/lib/apt/lists/* \
     && curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose \
     && chmod +x /usr/local/bin/docker-compose \
     && usermod -aG docker jenkins \
     && python3 -m venv /opt/venv
+
+# Install Google Cloud SDK
+RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list \
+    && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - \
+    && apt-get update && apt-get install -y google-cloud-sdk \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set Python environment path
 ENV PATH="/opt/venv/bin:$PATH"

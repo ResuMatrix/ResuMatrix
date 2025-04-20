@@ -56,7 +56,15 @@ pipeline {
                 sh '''
                 cd ${WORKSPACE_DIR}
                 . venv/bin/activate
+
+                # Create a temporary service account key file
+                echo "${GOOGLE_APPLICATION_CREDENTIALS}" > gcp_credentials.json
+                export GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/gcp_credentials.json"
+
                 python push_to_artifactory.py
+
+                # Clean up the temporary file
+                rm -f gcp_credentials.json
                 '''
             }
         }
