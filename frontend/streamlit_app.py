@@ -10,10 +10,16 @@ import os
 import requests
 import time
 import requests
+import random
 from google.cloud import storage
+from utils.create_download_link import create_download_link
 
 API_BASE_URL = os.getenv("RESUMATRIX_API_URL", "http://localhost:8000")
 GCP_BUCKET = os.getenv("GCP_BUCKET_NAME")
+
+# GCP access setup
+client = storage.Client.from_service_account_json("gcp_secret_key.json")
+bucket = client.bucket(GCP_BUCKET)
 
 # Streamlit UI
 st.set_page_config(page_title="ResuMatrix", page_icon=":briefcase:", layout="wide")
@@ -254,14 +260,32 @@ elif st.session_state.next_page == 'resume_page':
         zip_bytes = BytesIO(uploaded_resume.getvalue())
         extracted_files = []
 
+        # with zipfile.ZipFile(zip_bytes, 'r') as zip_ref:
+        #     for file_info in zip_ref.infolist():
+        #         if file_info.filename.endswith('.pdf'):
+        #             with zip_ref.open(file_info) as file:
+        #                 pdf_bytes = file.read()
+        #                 extracted_files.append((file_info.filename, BytesIO(pdf_bytes)))
+        #         else:
+        #             st.warning(f"Skipped non-PDF file: {file_info.filename}")
+
         with zipfile.ZipFile(zip_bytes, 'r') as zip_ref:
             for file_info in zip_ref.infolist():
-                if file_info.filename.endswith('.pdf'):
-                    with zip_ref.open(file_info) as file:
-                        pdf_bytes = file.read()
-                        extracted_files.append((file_info.filename, BytesIO(pdf_bytes)))
-                else:
-                    st.warning(f"Skipped non-PDF file: {file_info.filename}")
+                filename = file_info.filename
+
+                # Skip directories, hidden files, and non-PDFs
+                if (
+                    file_info.is_dir() or
+                    filename.startswith("__MACOSX") or
+                    filename.endswith(".DS_Store") or
+                    not filename.lower().endswith(".pdf")
+                ):
+                    st.warning(f"Skipped non-PDF or system file: {filename}")
+                    continue
+
+                with zip_ref.open(file_info) as file:
+                    pdf_bytes = file.read()
+                    extracted_files.append((filename, BytesIO(pdf_bytes)))
 
         if not extracted_files:
             st.error("No PDF files found in the uploaded ZIP.")
@@ -305,7 +329,7 @@ elif st.session_state.next_page == 'results_page' and st.session_state.show_resu
     if st.sidebar.button("Sign Out"):
         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
 
-    st.markdown("# Best Resume Matches for the Job Description")
+    st.markdown("# **Best Resume Matches for the Job Description**")
 
     job_id = st.session_state.job_id
     user_id = st.session_state.userid
@@ -349,9 +373,6 @@ elif st.session_state.next_page == 'results_page' and st.session_state.show_resu
     ranked_resumes = sorted([r for r in resumes_data if r["status"] > 0], key=lambda x: x["status"])
     unfit_resumes = [r for r in resumes_data if r["status"] == -1]
 
-    client = storage.Client.from_service_account_json("gcp_secret_key.json")
-    bucket = client.bucket(bucket_name)
-
     def get_resume_file_by_id(resume_id):
         # List all blobs in the folder
         blobs = bucket.list_blobs(prefix=f"resumes/{job_id}/")
@@ -391,7 +412,7 @@ elif st.session_state.next_page == 'results_page' and st.session_state.show_resu
                 )
 
     # Display Unfit Resumes
-    st.markdown("# Unfit Resumes")
+    st.markdown("# **Unfit Resumes**")
 
     # Display table headers
     col_name, col_rank, col_download = st.columns([4, 1, 2])
@@ -432,48 +453,124 @@ elif st.session_state.next_page == 'results_page' and st.session_state.show_resu
 
 
 elif st.session_state.next_page == "feedback_page":
+
     st.sidebar.text(f"Email: {st.session_state.useremail}")
     st.sidebar.text(f"Username: {st.session_state.username}")
     st.sidebar.text(f"Date: {datetime.date.today().strftime('%B %d, %Y')}")
     if st.sidebar.button("Sign Out"):
         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
+        st.rerun()
 
     st.sidebar.title(f"Thanks for visiting, {st.session_state.username}!")
-    st.title(" We value your feedback")
+    st.title("We value your feedback")
 
-    st.markdown("Please rate your experience with Resumatrix \n")
+    job_id = st.session_state.job_id
+    user_id = st.session_state.userid
 
-    feedback_questions = {
-        "job_clarity": "How clear was the job posting after editing?",
-        "resume_relevance": "Was the resume ranking relevant to the job description?",
-        "system_satisfaction": "Did the system meet your expectations?",
-        "interface_usability": "How easy was it to use the interface?",
-        "recommendation_likelihood": "How likely are you to recommend this tool?"
-    }
-
-    responses = {}
-
-    for key, question in feedback_questions.items():
-        responses[key] = st.select_slider(question, options=[1, 2, 3, 4, 5], value=1)
-
-    additional_comments = st.text_area("Any other suggestions or comments?")
-
-    if st.button("📨 Submit Feedback"):
-        feedback_payload = {
-            "username": st.session_state.username,
-            "useremail": st.session_state.useremail,
-            "job_id": st.session_state.username.replace(" ", "_") + "_job",
-            "responses": responses,
-            "comments": additional_comments
-        }
-
-    api_url = "http://127.0.0.1:8000/api/feedback/submit"  # Replace with your actual feedback endpoint
+    resumes_api = f"{API_BASE_URL}/jobs/{job_id}/resumes"
+    feedback_api = f"{API_BASE_URL}/feedback/update"
 
     try:
-        response = requests.post(api_url, json=feedback_payload)
-        if response.status_code == 200:
-            st.success("✅ Thank you for your feedback!")
-        else:
-            st.error(f"API responded with {response.status_code}: {response.text}")
-    except Exception as e:
-        st.error(f"Failed to send feedback: {e}")
+        resumes_res = requests.get(resumes_api)
+        resumes_data = resumes_res.json()["resumes"]
+    except:
+        st.error("Could not fetch resumes for feedback.")
+        st.stop()
+
+    ranked_resumes = [r for r in resumes_data if r["status"] > 0]
+    unfit_resumes = [r for r in resumes_data if r["status"] == -1]
+
+    # Sample 3 from each
+    if "sampled_ranked" not in st.session_state:
+        st.session_state.sampled_ranked = random.sample(ranked_resumes, min(3, len(ranked_resumes)))
+
+    if "sampled_unfit" not in st.session_state:
+        st.session_state.sampled_unfit = random.sample(unfit_resumes, min(3, len(unfit_resumes)))
+
+    def get_resume_file_by_id(resume_id):
+        blobs = bucket.list_blobs(prefix=f"resumes/{job_id}/")
+        for blob in blobs:
+            file_name = blob.name.split("/")[-1]
+            if file_name.startswith(f"{resume_id}_"):
+                actual_name = file_name.split(f"{resume_id}_", 1)[1]
+                return blob.download_as_bytes(), actual_name
+        return None, None
+    
+    st.markdown("## **Review Ranked Resumes**")
+    st.markdown("Were the ranked resumes a good fit for the job description uploaded?")
+
+    sampled_ranked = st.session_state.sampled_ranked
+    sampled_unfit = st.session_state.sampled_unfit
+
+    ranked_feedback = {}
+    for resume in sampled_ranked:
+        resume_bytes, resume_name = get_resume_file_by_id(resume["id"])
+        if resume_bytes:
+            col1, col2, col3 = st.columns([4, 1.5, 1.5])
+            with col1:
+                st.markdown(create_download_link(resume_bytes, resume_name), unsafe_allow_html=True)
+            with col2:
+                ranked_feedback[f"{resume['id']}_fit"] = st.checkbox("✅ Good Fit", key=f"fit_ranked_{resume['id']}")
+            with col3:
+                ranked_feedback[f"{resume['id']}_no_fit"] = st.checkbox("❌ No Fit", key=f"no_fit_ranked_{resume['id']}")
+    
+    st.markdown("---")
+
+    st.markdown("# **Review Unfit Resumes**")
+    st.markdown("Were the unfit resumes not a good fit for the job description uploaded?")
+
+    unfit_feedback = {}
+    for resume in sampled_unfit:
+        resume_bytes, resume_name = get_resume_file_by_id(resume["id"])
+        if resume_bytes:
+            col1, col2, col3 = st.columns([4, 1.5, 1.5])
+            with col1:
+                st.markdown(create_download_link(resume_bytes, resume_name), unsafe_allow_html=True)
+            with col2:
+                unfit_feedback[f"{resume['id']}_fit"] = st.checkbox("✅ Good Fit", key=f"fit_unfit_{resume['id']}")
+            with col3:
+                unfit_feedback[f"{resume['id']}_no_fit"] = st.checkbox("❌ No Fit", key=f"no_fit_unfit_{resume['id']}")
+
+    
+
+    st.markdown("---")
+
+    col_submit, col_skip = st.columns([2, 2])
+
+    with col_submit:
+        if st.button("📨 Submit Feedback"):
+            feedback_payload = []
+
+            # Helper to process checkbox states
+            def add_feedback(feedback_dict):
+                for k, v in feedback_dict.items():
+                    resume_id, label = k.split("_", 1)
+                    if v:
+                        feedback_payload.append({
+                            "id": resume_id,
+                            "feedback_label": 1 if label == "fit" else -1
+                        })
+
+            add_feedback(ranked_feedback)
+            add_feedback(unfit_feedback)
+
+            if feedback_payload:
+                try:
+                    res = requests.put(resumes_api, json={"resumes": feedback_payload})
+                    if res.status_code == 200:
+                        st.success("Feedback submitted successfully!")
+                        st.session_state.pop("sampled_ranked", None)
+                        st.session_state.pop("sampled_unfit", None)
+                        st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
+                        st.rerun()
+                    else:
+                        st.error(f"API Error {res.status_code}: {res.text}")
+                except Exception as e:
+                    st.error(f"Failed to submit feedback: {e}")
+            else:
+                st.warning("No feedback selected to submit.")
+
+    with col_skip:
+        if st.button("⏭️ Skip Feedback"):
+            st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
+            st.rerun()
