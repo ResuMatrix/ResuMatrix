@@ -2,7 +2,7 @@
 
 ResuMatrix is an Agentic AI-based Resume Analysis and Ranking Application. 
 
-This project is part of the coursework for IE 7374: Machine Learning Operations and currently is in progress.
+This project is part of the coursework for IE 7374: Machine Learning Operations.
 
 ## Introduction
 Our resume-job matching pipeline is designed to automate the end-to-end process of extracting, processing, and analyzing job descriptions and resumes. Built using Apache Airflow, our pipeline orchestrates various tasks such as loading data, cleaning, preprocessing using natural language processing (NLP) techniques, and applying machine learning models to determine the suitability of a resume for a given job description.
@@ -143,5 +143,3 @@ To optimize the pipeline flow and improve efficiency, Apache Airflow’s Gantt c
 During model development, we may uncover additional biases, particularly related to PII and demographic factors, as our data consists of textual information, such as resumes and job descriptions. To address these concerns, in mitigate_bias.py we remove all personally identifiable information (PII) and eliminate stopwords, such as pronouns, to mitigate demographic bias. Other demographic features like age, associated organizations become important features to absolutely remove, but to improve the fairness of the model while maintaining feature quality, we categorize the values into various bins. 
 Additionally, we aim to remove simple but potentially misleading parametric features, like resume length, by converting the data into embeddings, which provide a more nuanced representation. This approach helps us avoid overfitting to trivial features that might skew the model's fairness. 
 However, it is important to note that biases could still emerge throughout the development process, and continuous evaluation will be necessary to identify and address them as we move forward.
-
-test10!
