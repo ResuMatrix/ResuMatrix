@@ -47,8 +47,9 @@ def get_resume_ranking_service(
 def get_resume_processing_service(
         pinecone_service: PineconeService = Depends(get_pinecone_service),
         genai_service: GoogleGenAIService = Depends(get_genai_service),
-        ranking_service: ResumeRankingService = Depends(get_resume_ranking_service)):
+        ranking_service: ResumeRankingService = Depends(get_resume_ranking_service),
+        db_service: DatabaseService = Depends(get_db_service)):
     """
     Inject ResumeProcessingService dependency
     """
-    return ResumeProcessingService(pinecone_service, genai_service, ranking_service)
+    return ResumeProcessingService(pinecone_service, genai_service, ranking_service, db_service)
