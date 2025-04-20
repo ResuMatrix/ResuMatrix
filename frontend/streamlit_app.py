@@ -260,14 +260,32 @@ elif st.session_state.next_page == 'resume_page':
         zip_bytes = BytesIO(uploaded_resume.getvalue())
         extracted_files = []
 
+        # with zipfile.ZipFile(zip_bytes, 'r') as zip_ref:
+        #     for file_info in zip_ref.infolist():
+        #         if file_info.filename.endswith('.pdf'):
+        #             with zip_ref.open(file_info) as file:
+        #                 pdf_bytes = file.read()
+        #                 extracted_files.append((file_info.filename, BytesIO(pdf_bytes)))
+        #         else:
+        #             st.warning(f"Skipped non-PDF file: {file_info.filename}")
+
         with zipfile.ZipFile(zip_bytes, 'r') as zip_ref:
             for file_info in zip_ref.infolist():
-                if file_info.filename.endswith('.pdf'):
-                    with zip_ref.open(file_info) as file:
-                        pdf_bytes = file.read()
-                        extracted_files.append((file_info.filename, BytesIO(pdf_bytes)))
-                else:
-                    st.warning(f"Skipped non-PDF file: {file_info.filename}")
+                filename = file_info.filename
+
+                # Skip directories, hidden files, and non-PDFs
+                if (
+                    file_info.is_dir() or
+                    filename.startswith("__MACOSX") or
+                    filename.endswith(".DS_Store") or
+                    not filename.lower().endswith(".pdf")
+                ):
+                    st.warning(f"Skipped non-PDF or system file: {filename}")
+                    continue
+
+                with zip_ref.open(file_info) as file:
+                    pdf_bytes = file.read()
+                    extracted_files.append((filename, BytesIO(pdf_bytes)))
 
         if not extracted_files:
             st.error("No PDF files found in the uploaded ZIP.")
