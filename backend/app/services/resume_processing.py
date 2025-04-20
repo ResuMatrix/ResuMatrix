@@ -1,3 +1,4 @@
+import json
 import asyncio
 import logging
 from typing import List
@@ -51,9 +52,18 @@ class ResumeProcessingService:
         
         rsm_to_update = []
         for i in range(len(result['final_ranking'])):
-            rsm_to_update.append({"id": result['final_ranking'][i], "status": i+1})
-
+            resume_id = result['final_ranking'][i]
+            scores_json = {
+                    "education": result["individual_scores"]["education"][resume_id],
+                    "workexp": result["individual_scores"]["workexp"][resume_id],
+                    "personal_projects": result["individual_scores"]["personal_projects"][resume_id],
+                    "misc": result["individual_scores"]["misc"][resume_id]
+                    }
+            rsm_to_update.append({"id": result['final_ranking'][i], "status": i+1, "section_scores": json.dumps(scores_json)})
+        
         await self.db_service.update_resumes_with_job_id(job_id, rsm_to_update)
+
+        await self.db_service.update_jobs([{"id": job_id, "status": 1}])
         
         return rsm_to_update
 
