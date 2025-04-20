@@ -33,20 +33,23 @@ pipeline {
     stages {
         stage('Check Branch and Changed Files') {
             steps {
-                script {
-                    // Get the current branch name
-                    def branchName = sh(script: 'git rev-parse --abbrev-ref HEAD || echo "unknown"', returnStdout: true).trim()
-                    echo "Current branch: ${branchName}"
+            script {
+            // Get the branch name from Jenkins environment variables first
+            def branchName = env.GIT_BRANCH ?: sh(script: 'git rev-parse --abbrev-ref HEAD || echo "unknown"', returnStdout: true).trim()
+            
+            // Clean up branch name (remove 'origin/' prefix if present)
+            branchName = branchName.replace('origin/', '')
+            echo "Current branch: ${branchName}"
 
-                    // Define allowed branches
-                    def allowedBranches = ['main', 'master', 'develop','origin/main', 'origin/master', 'origin/develop']
+            // Define allowed branches (without 'origin/' prefix)
+            def allowedBranches = ['main', 'master', 'develop']
 
-                    // Check if current branch is allowed
-                    if (!allowedBranches.contains(branchName)) {
-                        echo "Current branch ${branchName} is not in the allowed list: ${allowedBranches}. Skipping pipeline execution."
-                        currentBuild.result = 'SUCCESS'
-                        error("Skipping pipeline execution as branch ${branchName} is not in the allowed list.")
-                    }
+            // Check if current branch is allowed
+            if (!allowedBranches.contains(branchName)) {
+                echo "Current branch ${branchName} is not in the allowed list: ${allowedBranches}. Skipping pipeline execution."
+                currentBuild.result = 'SUCCESS'
+                error("Skipping pipeline execution as branch ${branchName} is not in the allowed list.")
+            }
 
                     echo "Branch ${branchName} is allowed. Checking changed files..."
 
