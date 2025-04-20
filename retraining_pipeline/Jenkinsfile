@@ -39,7 +39,7 @@ pipeline {
                     echo "Current branch: ${branchName}"
 
                     // Define allowed branches
-                    def allowedBranches = ['main', 'master', 'origin/main', 'origin/master']
+                    def allowedBranches = ['main', 'master', 'origin/develop', 'origin/master']
 
                     // Check if current branch is allowed
                     if (!allowedBranches.contains(branchName)) {
