@@ -19,16 +19,24 @@ This directory contains a Docker setup that runs both Jenkins and MLflow in a si
 
 ## Quick Start
 
-```bash
-cd retraining_pipeline/docker
-chmod +x init-container.sh
-./init-container.sh
-```
+1. Build and run the container:
+   ```bash
+   cd retraining_pipeline/docker
+   chmod +x init-container.sh
+   ./init-container.sh
+   ```
 
-The script will:
-- Create Docker volumes
-- Build and run the container
-- Display the Jenkins admin password
+   The script will:
+   - Create Docker volumes
+   - Build and run the container
+   - Display the Jenkins admin password
+
+2. Set up Docker permissions for Jenkins (required for the pipeline to build and push Docker images):
+   ```bash
+   chmod +x setup_docker_permissions.sh
+   sudo ./setup_docker_permissions.sh
+   ```
+   See `DOCKER_PERMISSIONS.md` for more details on Docker permissions.
 
 ## Manual Setup
 
