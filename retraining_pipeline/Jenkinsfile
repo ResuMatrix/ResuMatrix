@@ -6,6 +6,16 @@ pipeline {
     // 2. The Jenkins user has sudo access to run docker commands without password
     // 3. The Docker socket permissions have been modified: chmod 666 /var/run/docker.sock
 
+    // Configure GitHub webhook trigger to monitor specific paths
+    triggers {
+        githubPush(
+            // This will trigger the pipeline when changes are pushed to these paths
+            includeBranches: ['main', 'master'],
+            excludeBranches: [],
+            includePaths: ['retraining_pipeline/**', 'src/model/**', 'data_pipeline/scripts/embeddings/**']
+        )
+    }
+
     environment {
         // Load credentials from env_variables.json
         MLFLOW_TRACKING_URI = credentials('MLFLOW_TRACKING_URI')

@@ -37,7 +37,8 @@ RUN mkdir -p /mlflow/artifacts /mlflow/mlruns /var/log/supervisor \
 RUN jenkins-plugin-cli --plugins \
     workflow-aggregator git docker-workflow email-ext \
     credentials-binding pipeline-utility-steps \
-    google-oauth-plugin google-storage-plugin google-compute-engine
+    google-oauth-plugin google-storage-plugin google-compute-engine \
+    github github-branch-source github-api
 
 # Copy startup script
 COPY start-services.sh /usr/local/bin/start-services.sh
