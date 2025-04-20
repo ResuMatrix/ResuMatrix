@@ -227,26 +227,26 @@ def generate_and_save_embeddings(**kwargs):
         if 'resume_text' in df.columns and 'job_description_text' in df.columns:
             df['resume_text'] = df['resume_text'].apply(clean_text)
             df['job_description_text'] = df['job_description_text'].apply(clean_text)
-        
+
         def is_selected_label(label):
             if isinstance(label, str):
                 label = label.lower()
                 return label in ['good fit', 'no fit']
             else:  # numeric labels
                 return label in [1, -1]  # 1=good fit, -1=no fit
-        
+
         original_count = len(df)
         df = df[df['label'].apply(is_selected_label)]
         filtered_count = len(df)
         removed_count = original_count - filtered_count
-        
+
         logger.info(f"Removed {removed_count} rows with other labels. Kept {filtered_count} rows.")
-        
+
         if df.empty:
             error_msg = "No data remaining after filtering for 'good fit' and 'no fit' labels"
             logger.error(error_msg)
             raise ValueError(error_msg)
-        
+
         # Split the data into train (80%) and test (20%) sets
         logger.info("Splitting data into train and test sets (80/20 split)...")
         train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
@@ -443,7 +443,7 @@ with DAG(
     'embeddings_generation_pipeline',
     default_args=default_args,
     description='Pipeline to fetch training data, generate embeddings, and upload to GCS',
-    schedule_interval=None,
+    schedule_interval='0 0 */10 * *',  # Run every 10 days
     catchup=False
 ) as dag:
 
