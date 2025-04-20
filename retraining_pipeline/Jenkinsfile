@@ -6,14 +6,14 @@ pipeline {
     // 2. The Jenkins user has sudo access to run docker commands without password
     // 3. The Docker socket permissions have been modified: chmod 666 /var/run/docker.sock
 
-    // Configure GitHub webhook trigger to monitor specific paths
+    // Configure GitHub webhook trigger
     triggers {
-        githubPush(
-            // This will trigger the pipeline when changes are pushed to these paths
-            includeBranches: ['main', 'master'],
-            excludeBranches: [],
-            includePaths: ['retraining_pipeline/**', 'src/model/**', 'data_pipeline/scripts/embeddings/**']
-        )
+        githubPush()
+    }
+
+    // Define which paths should trigger the pipeline
+    options {
+        skipDefaultCheckout(false)
     }
 
     environment {
@@ -32,6 +32,45 @@ pipeline {
     }
 
     stages {
+        stage('Check Changed Files') {
+            steps {
+                script {
+                    // Get the list of changed files
+                    def changedFiles = sh(script: 'git diff --name-only HEAD^ HEAD || git diff --name-only origin/main...HEAD || echo "No changes detected"', returnStdout: true).trim()
+                    echo "Changed files: ${changedFiles}"
+
+                    // Define patterns for files that should trigger the pipeline
+                    def relevantPatterns = [
+                        '^retraining_pipeline/.*',
+                        '^src/model/.*',
+                        '^data_pipeline/scripts/embeddings/.*'
+                    ]
+
+                    // Check if any changed file matches our patterns
+                    def shouldRun = false
+                    for (def file in changedFiles.split("\n")) {
+                        for (def pattern in relevantPatterns) {
+                            if (file.matches(pattern)) {
+                                echo "Relevant file changed: ${file}"
+                                shouldRun = true
+                                break
+                            }
+                        }
+                        if (shouldRun) break
+                    }
+
+                    // Skip the rest of the pipeline if no relevant files were changed
+                    if (!shouldRun) {
+                        echo "No relevant files were changed. Skipping pipeline execution."
+                        currentBuild.result = 'SUCCESS'
+                        error("Skipping pipeline execution as no relevant files were changed.")
+                    }
+
+                    echo "Relevant files were changed. Proceeding with pipeline execution."
+                }
+            }
+        }
+
         stage('Setup Python Environment') {
             steps {
                 sh '''
