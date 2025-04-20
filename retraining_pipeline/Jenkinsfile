@@ -32,9 +32,25 @@ pipeline {
     }
 
     stages {
-        stage('Check Changed Files') {
+        stage('Check Branch and Changed Files') {
             steps {
                 script {
+                    // Get the current branch name
+                    def branchName = sh(script: 'git rev-parse --abbrev-ref HEAD || echo "unknown"', returnStdout: true).trim()
+                    echo "Current branch: ${branchName}"
+
+                    // Define allowed branches
+                    def allowedBranches = ['main', 'master', 'origin/main', 'origin/master']
+
+                    // Check if current branch is allowed
+                    if (!allowedBranches.contains(branchName)) {
+                        echo "Current branch ${branchName} is not in the allowed list: ${allowedBranches}. Skipping pipeline execution."
+                        currentBuild.result = 'SUCCESS'
+                        error("Skipping pipeline execution as branch ${branchName} is not in the allowed list.")
+                    }
+
+                    echo "Branch ${branchName} is allowed. Checking changed files..."
+
                     // Get the list of changed files
                     def changedFiles = sh(script: 'git diff --name-only HEAD^ HEAD || git diff --name-only origin/main...HEAD || echo "No changes detected"', returnStdout: true).trim()
                     echo "Changed files: ${changedFiles}"
@@ -66,7 +82,7 @@ pipeline {
                         error("Skipping pipeline execution as no relevant files were changed.")
                     }
 
-                    echo "Relevant files were changed. Proceeding with pipeline execution."
+                    echo "Branch ${branchName} is allowed and relevant files were changed. Proceeding with pipeline execution."
                 }
             }
         }
