@@ -57,18 +57,13 @@ pipeline {
                 cd ${WORKSPACE_DIR}
                 . venv/bin/activate
 
-                # Create a temporary service account key file from the Jenkins credential
-                # The GOOGLE_APPLICATION_CREDENTIALS credential in Jenkins is the service account key content
-                echo "${GOOGLE_APPLICATION_CREDENTIALS}" > gcp_credentials.json
-                export GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/gcp_credentials.json"
+                # Use the existing service account key file in the root folder
+                export GOOGLE_APPLICATION_CREDENTIALS="${WORKSPACE}/awesome-nimbus-452221-v2-06cf77823029.json"
 
                 # Verify the file exists and is valid JSON
-                cat gcp_credentials.json | jq . > /dev/null || echo "Warning: Credentials file is not valid JSON"
+                cat ${GOOGLE_APPLICATION_CREDENTIALS} | jq . > /dev/null || echo "Warning: Credentials file is not valid JSON"
 
                 python push_to_artifactory.py
-
-                # Clean up the temporary credentials file
-                rm -f gcp_credentials.json
                 '''
             }
         }
