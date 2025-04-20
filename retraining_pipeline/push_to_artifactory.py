@@ -171,7 +171,6 @@ ENTRYPOINT ["/app/entrypoint.sh"]
             # Continue anyway, this is not critical
 
         logger.info(f"Successfully pushed model to Google Artifact Registry: {image_tag}")
-
         return True
 
     except Exception as e:
@@ -186,8 +185,6 @@ def main():
     artifact_registry_repo = os.environ.get("ARTIFACT_REGISTRY_REPO")
 
     # Log essential information
-    logger.info(f"Using GCP project: {gcp_project_id}")
-    logger.info(f"Using Artifact Registry repo: {artifact_registry_repo}")
 
     # Validate required environment variables
     if not gcp_credentials:

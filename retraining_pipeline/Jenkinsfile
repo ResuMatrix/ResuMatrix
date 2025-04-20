@@ -58,6 +58,7 @@ pipeline {
                 . venv/bin/activate
 
                 # Create a temporary service account key file from the Jenkins credential
+                # The GOOGLE_APPLICATION_CREDENTIALS credential in Jenkins is the service account key content
                 echo "${GOOGLE_APPLICATION_CREDENTIALS}" > gcp_credentials.json
                 export GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/gcp_credentials.json"
 
