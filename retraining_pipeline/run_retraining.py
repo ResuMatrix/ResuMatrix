@@ -172,6 +172,7 @@ def main():
     # Load file paths
     data_dir = os.environ.get("DATA_DIR", "data")
     file_paths_file = os.path.join(data_dir, "file_paths.json")
+    logger.info(f"Looking for file_paths.json at: {os.path.abspath(file_paths_file)}")
 
     try:
         with open(file_paths_file, "r") as f:
