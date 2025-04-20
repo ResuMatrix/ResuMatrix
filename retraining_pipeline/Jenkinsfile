@@ -57,14 +57,11 @@ pipeline {
                 cd ${WORKSPACE_DIR}
                 . venv/bin/activate
 
-                # Create a temporary service account key file
-                echo "${GOOGLE_APPLICATION_CREDENTIALS}" > gcp_credentials.json
-                export GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/gcp_credentials.json"
+                # No need to create a temporary service account key file
+                # We'll use the Jenkins credentials directly in the Python script
+                # The script will simulate pushing to Artifact Registry for demo purposes
 
                 python push_to_artifactory.py
-
-                # Clean up the temporary file
-                rm -f gcp_credentials.json
                 '''
             }
         }
