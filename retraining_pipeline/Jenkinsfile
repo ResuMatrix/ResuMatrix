@@ -54,24 +54,20 @@ pipeline {
                     def changedFiles = sh(script: 'git diff --name-only HEAD^ HEAD || git diff --name-only origin/main...HEAD || echo "No changes detected"', returnStdout: true).trim()
                     echo "Changed files: ${changedFiles}"
 
-                    // Define patterns for files that should trigger the pipeline
-                    def relevantPatterns = [
-                        '^retraining_pipeline/.*',
-                        '^src/model/.*',
-                        '^data_pipeline/scripts/embeddings/.*'
+                    // Define specific files that should trigger the pipeline
+                    def relevantFiles = [
+                        'src/model_training/similarity_with_xgboost.py',
+                        'src/data_processing/data_preprocessing.py'
                     ]
 
-                    // Check if any changed file matches our patterns
+                    // Check if any changed file is in our list of relevant files
                     def shouldRun = false
                     for (def file in changedFiles.split("\n")) {
-                        for (def pattern in relevantPatterns) {
-                            if (file.matches(pattern)) {
-                                echo "Relevant file changed: ${file}"
-                                shouldRun = true
-                                break
-                            }
+                        if (relevantFiles.contains(file)) {
+                            echo "Relevant file changed: ${file}"
+                            shouldRun = true
+                            break
                         }
-                        if (shouldRun) break
                     }
 
                     // Skip the rest of the pipeline if no relevant files were changed

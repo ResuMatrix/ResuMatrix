@@ -198,7 +198,7 @@ triggers {
 While this trigger responds to all repository pushes, the pipeline includes a smart filtering mechanism in the first stage that:
 
 1. Checks if the current branch is in the allowed list (main/master)
-2. Checks which files were changed and only proceeds if they match specific patterns
+2. Checks if any of the specific monitored files were changed
 
 ```groovy
 stage('Check Branch and Changed Files') {
@@ -219,16 +219,21 @@ stage('Check Branch and Changed Files') {
             // Get the list of changed files
             def changedFiles = sh(script: 'git diff --name-only HEAD^ HEAD || git diff --name-only origin/main...HEAD', returnStdout: true).trim()
 
-            // Define patterns for files that should trigger the pipeline
-            def relevantPatterns = [
-                '^retraining_pipeline/.*',
-                '^src/model/.*',
-                '^data_pipeline/scripts/embeddings/.*'
+            // Define specific files that should trigger the pipeline
+            def relevantFiles = [
+                'src/model_training/similarity_with_xgboost.py',
+                'src/data_processing/data_preprocessing.py'
             ]
 
-            // Check if any changed file matches our patterns
+            // Check if any changed file is in our list of relevant files
             def shouldRun = false
-            // ... logic to check files against patterns ...
+            for (def file in changedFiles.split("\n")) {
+                if (relevantFiles.contains(file)) {
+                    echo "Relevant file changed: ${file}"
+                    shouldRun = true
+                    break
+                }
+            }
 
             // Skip the pipeline if no relevant files were changed
             if (!shouldRun) {

@@ -113,14 +113,13 @@ The pipeline will only run when changes are pushed to these branches:
 
 You can modify the allowed branches in the `Check Branch and Changed Files` stage of the Jenkinsfile.
 
-#### Monitored Paths
+#### Monitored Files
 
-The pipeline will only run when changes are detected in these paths:
-- `retraining_pipeline/**`: Any changes in the retraining pipeline code
-- `src/model/**`: Changes to the model source code
-- `data_pipeline/scripts/embeddings/**`: Changes to the embeddings generation scripts
+The pipeline will only run when changes are detected in these specific files:
+- `src/model_training/similarity_with_xgboost.py`: The XGBoost similarity model implementation
+- `src/data_processing/data_preprocessing.py`: The data preprocessing implementation
 
-You can modify these patterns in the `Check Branch and Changed Files` stage of the Jenkinsfile.
+You can modify the list of monitored files in the `Check Branch and Changed Files` stage of the Jenkinsfile.
 
 ## Pipeline Stages
 
