@@ -53,18 +53,20 @@ pipeline {
 
         stage('Build and Push Docker Image') {
             steps {
-                sh '''
-                cd ${WORKSPACE_DIR}
-                . venv/bin/activate
+                withCredentials([file(credentialsId: 'GOOGLE_APPLICATION_CREDENTIALS', variable: 'GCP_KEY_FILE')]) {
+                    sh '''
+                    cd ${WORKSPACE_DIR}
+                    . venv/bin/activate
 
-                # Use the existing service account key file in the root folder
-                export GOOGLE_APPLICATION_CREDENTIALS="${WORKSPACE}/awesome-nimbus-452221-v2-06cf77823029.json"
+                    # Use the GCP key file provided by Jenkins
+                    export GOOGLE_APPLICATION_CREDENTIALS="${GCP_KEY_FILE}"
 
-                # Verify the file exists and is valid JSON
-                cat ${GOOGLE_APPLICATION_CREDENTIALS} | jq . > /dev/null || echo "Warning: Credentials file is not valid JSON"
+                    # Verify the file exists and is valid JSON
+                    cat "${GOOGLE_APPLICATION_CREDENTIALS}" | jq . > /dev/null || echo "Warning: Credentials file is not valid JSON"
 
-                python push_to_artifactory.py
-                '''
+                    python push_to_artifactory.py
+                    '''
+                }
             }
         }
     }
