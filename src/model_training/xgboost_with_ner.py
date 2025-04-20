@@ -70,7 +70,7 @@ def train_xgboost_model(X_train, y_train, X_test, y_test):
     with mlflow.start_run():
 
         mlflow.set_experiment("XGBoost Model with NER")
-
+        #test
         xgb_model = XGBClassifier()
         xgb_model.fit(X_train, y_train)
 
