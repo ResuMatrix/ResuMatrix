@@ -11,18 +11,20 @@ pipeline {
 
         // Additional environment variables
         ARTIFACT_REGISTRY_REPO = credentials('ARTIFACT_REGISTRY_REPO')
-        MODEL_OUTPUT_DIR = "model_registry"
-        DATA_DIR = "data"
+        MODEL_OUTPUT_DIR = "retraining_pipeline/model_registry"
+        DATA_DIR = "retraining_pipeline/data"
+        WORKSPACE_DIR = "retraining_pipeline"
     }
 
     stages {
         stage('Setup Python Environment') {
             steps {
                 sh '''
+                cd ${WORKSPACE_DIR}
                 python3 -m venv venv
                 . venv/bin/activate
                 pip install --upgrade pip
-                pip install -r retraining_pipeline/requirements.txt
+                pip install -r requirements.txt
                 '''
             }
         }
@@ -30,6 +32,7 @@ pipeline {
         stage('Download Data from GCS') {
             steps {
                 sh '''
+                cd ${WORKSPACE_DIR}
                 . venv/bin/activate
                 mkdir -p ${DATA_DIR}
                 python download_from_gcs.py
@@ -40,6 +43,7 @@ pipeline {
         stage('Train Model') {
             steps {
                 sh '''
+                cd ${WORKSPACE_DIR}
                 . venv/bin/activate
                 mkdir -p ${MODEL_OUTPUT_DIR}
                 python run_retraining.py
@@ -50,6 +54,7 @@ pipeline {
         stage('Build and Push Docker Image') {
             steps {
                 sh '''
+                cd ${WORKSPACE_DIR}
                 . venv/bin/activate
                 python push_to_artifactory.py
                 '''
