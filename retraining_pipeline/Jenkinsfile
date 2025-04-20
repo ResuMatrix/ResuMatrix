@@ -11,9 +11,9 @@ pipeline {
 
         // Additional environment variables
         ARTIFACT_REGISTRY_REPO = credentials('ARTIFACT_REGISTRY_REPO')
-        MODEL_OUTPUT_DIR = "model_registry"
-        DATA_DIR = "data"
         WORKSPACE_DIR = "retraining_pipeline"
+        MODEL_OUTPUT_DIR = "${WORKSPACE_DIR}/model_registry"
+        DATA_DIR = "${WORKSPACE_DIR}/data"
     }
 
     stages {
