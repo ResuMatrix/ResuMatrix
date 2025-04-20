@@ -35,7 +35,9 @@ def create_supabase_table():
 
         # Try to delete all records first (in case table exists but we can't drop it)
         try:
-            supabase.table('training_data').delete().execute()
+            response =supabase.table('training_data').delete().neq("id", "").execute()
+            print(f"Deleted {response.data} records from training_data table")
+            
         except Exception:
             # Table might not exist yet, which is fine
             pass

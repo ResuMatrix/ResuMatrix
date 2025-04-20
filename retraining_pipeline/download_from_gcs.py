@@ -9,12 +9,12 @@ import json
 import logging
 from datetime import datetime
 from google.cloud import storage
-import numpy as np
 from dotenv import load_dotenv
 
 # Load the .env file from the parent directory
 dotenv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
 load_dotenv(dotenv_path)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -25,27 +25,43 @@ logger = logging.getLogger(__name__)
 def download_blob(bucket_name, source_blob_name, destination_file_name):
     """Downloads a blob from the bucket."""
     try:
+        logger.info(f"Attempting to download {source_blob_name} from bucket {bucket_name}")
         # Initialize the GCS client
         storage_client = storage.Client()
         bucket = storage_client.bucket(bucket_name)
         blob = bucket.blob(source_blob_name)
 
         # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(destination_file_name), exist_ok=True)
+        dest_dir = os.path.dirname(destination_file_name)
+        os.makedirs(dest_dir, exist_ok=True)
+        logger.info(f"Created directory: {os.path.abspath(dest_dir)}")
 
         # Download the blob
         blob.download_to_filename(destination_file_name)
         logger.info(f"Downloaded {source_blob_name} to {destination_file_name}")
-        return True
+
+        # Verify the file exists
+        if os.path.exists(destination_file_name):
+            logger.info(f"Verified file exists at: {os.path.abspath(destination_file_name)}")
+            return True
+        else:
+            logger.error(f"File was not created at: {os.path.abspath(destination_file_name)}")
+            return False
     except Exception as e:
         logger.error(f"Error downloading {source_blob_name}: {str(e)}")
         return False
 
 def list_blobs_with_prefix(bucket_name, prefix):
     """Lists all the blobs in the bucket with the given prefix."""
-    storage_client = storage.Client()
-    blobs = storage_client.list_blobs(bucket_name, prefix=prefix)
-    return list(blobs)
+    try:
+        storage_client = storage.Client()
+        blobs = storage_client.list_blobs(bucket_name, prefix=prefix)
+        blob_list = list(blobs)
+        logger.info(f"Found {len(blob_list)} blobs with prefix '{prefix}' in bucket '{bucket_name}'")
+        return blob_list
+    except Exception as e:
+        logger.error(f"Error listing blobs with prefix '{prefix}': {str(e)}")
+        return []
 
 def download_latest_embeddings(bucket_name, output_dir="data"):
     """
@@ -115,8 +131,16 @@ def main():
     """Main function to download embeddings from GCS."""
     # Set up environment variables
     bucket_name = os.environ.get("GCP_BUCKET_NAME", "resumatrix-embeddings")
-    output_dir = os.environ.get("OUTPUT_DIR", "data")
+    output_dir = os.environ.get("DATA_DIR", "data")
     gcp_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+
+    # Log essential information
+    logger.info(f"Using GCP bucket: {bucket_name}")
+    logger.info(f"Saving to output directory: {output_dir}")
+
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+    logger.info(f"Created output directory at: {os.path.abspath(output_dir)}")
 
     # Ensure GCP credentials are properly set
     if gcp_credentials:
@@ -125,6 +149,12 @@ def main():
             gcp_credentials = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', gcp_credentials))
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gcp_credentials
         logger.info(f"Using GCP credentials from: {gcp_credentials}")
+
+        # Check if the file exists
+        if os.path.exists(gcp_credentials):
+            logger.info("GCP credentials file exists.")
+        else:
+            logger.error(f"GCP credentials file does not exist at: {gcp_credentials}")
     else:
         logger.warning("GOOGLE_APPLICATION_CREDENTIALS not set. Using default credentials.")
 
@@ -134,8 +164,20 @@ def main():
     if result:
         logger.info("Successfully downloaded embeddings and metadata")
         # Save paths to a file for the next step
-        with open(os.path.join(output_dir, "file_paths.json"), "w") as f:
-            json.dump(result, f)
+        file_paths_json = os.path.join(output_dir, "file_paths.json")
+        logger.info(f"Saving file paths to: {os.path.abspath(file_paths_json)}")
+        try:
+            with open(file_paths_json, "w") as f:
+                json.dump(result, f)
+            logger.info(f"Successfully saved file paths to: {os.path.abspath(file_paths_json)}")
+            # Verify the file exists
+            if os.path.exists(file_paths_json):
+                logger.info(f"Verified file_paths.json exists at: {os.path.abspath(file_paths_json)}")
+            else:
+                logger.error(f"file_paths.json was not created at: {os.path.abspath(file_paths_json)}")
+        except Exception as e:
+            logger.error(f"Error saving file paths: {str(e)}")
+            exit(1)
     else:
         logger.error("Failed to download embeddings and metadata")
         exit(1)

@@ -1,63 +1,39 @@
-# ML Model Retraining Pipeline
+# Model Retraining Pipeline
 
-This directory contains a Jenkins-based ML retraining pipeline for the ResuMatrix project. The pipeline is triggered when new embeddings and metadata are uploaded to Google Cloud Storage (GCS).
+This directory contains the code and configuration for the automated model retraining pipeline.
 
-## Pipeline Overview
+## Directory Structure
 
-The pipeline performs the following steps:
+- `docker/`: Contains Docker configuration for the unified Jenkins + MLflow environment
+  - `Dockerfile`: Defines the Docker image with Jenkins and MLflow
+  - `start-services.sh`: Script to start both Jenkins and MLflow services
+  - `init-container.sh`: Script to initialize and run the Docker container
+  - `README.md`: Documentation for the Docker setup
 
-1. Downloads train/test embeddings and metadata from GCS
-2. Loads and validates the data
-3. Trains a new XGBoost model using the existing training function
-4. Logs metrics with MLflow (accuracy, classification report, confusion matrix)
-5. Compares the new model to the best previous run (based on accuracy)
-6. If the new model performs better, saves it to the model registry
-7. Pushes the model to Google Artifact Registry if a new model was saved
+- `Jenkinsfile`: Defines the Jenkins pipeline for model retraining
+- `download_from_gcs.py`: Script to download embeddings and metadata from Google Cloud Storage
+- `run_retraining.py`: Script to run the model retraining process
+- `push_to_artifactory.py`: Script to build and push the Docker image to Google Artifact Registry
+- `requirements.txt`: Python dependencies for the retraining pipeline
 
-## Files
+## Getting Started
 
-- `download_from_gcs.py`: Downloads files from GCS and saves them to local disk
-- `run_retraining.py`: Loads the data, trains the model, and compares it to the best previous model
-- `Dockerfile`: Defines the Docker image for running the pipeline
-- `jenkins_pipeline.groovy`: Jenkins pipeline definition
-- `requirements.txt`: Python dependencies for the pipeline
+1. Set up the Docker environment:
+   ```bash
+   cd docker
+   chmod +x init-container.sh
+   ./init-container.sh
+   ```
 
-## Environment Variables
+2. Access Jenkins at http://localhost:8080 and set up the necessary credentials.
 
-The pipeline uses the following environment variables:
+3. Access MLflow at http://localhost:5001 to view experiment results.
 
-- `GOOGLE_APPLICATION_CREDENTIALS`: Path to GCP service account credentials (defaults to `GCP_JSON_PATH`)
-- `GCP_BUCKET_NAME`: Name of the GCS bucket containing embeddings and metadata
-- `GCP_PROJECT_ID`: Google Cloud Project ID
-- `MLFLOW_TRACKING_URI`: URI of the MLflow tracking server (defaults to `http://localhost:5000`)
-- `ARTIFACT_REGISTRY_REPO`: Google Artifact Registry repository for storing Docker images (defaults to `us-east1-docker.pkg.dev/${GCP_PROJECT_ID}/resume-fit-supervised/xgboost_and_cosine_similarity`)
-- `DATA_DIR`: Directory for storing downloaded data (defaults to `data`)
-- `MODEL_REGISTRY_DIR`: Directory for storing trained models (defaults to `model_registry`)
+4. Create and run the model retraining pipeline in Jenkins.
 
-These variables are set in the `.env` file at the root of the project.
+## Pipeline Stages
 
-## Setup
-
-1. Configure Jenkins with the necessary credentials and plugins
-2. Create a new Jenkins pipeline job using the `jenkins_pipeline.groovy` file
-3. Set up the required environment variables in Jenkins
-
-## Running Locally
-
-To run the pipeline locally:
-
-1. Set up the required environment variables
-2. Run `python download_from_gcs.py` to download the data
-3. Run `python run_retraining.py` to train and evaluate the model
-
-## Docker
-
-To build and run the Docker image:
-
-```bash
-docker build -t resumatrix-retraining -f Dockerfile .
-docker run -e GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json \
-           -e GCP_BUCKET_NAME=your-bucket-name \
-           -e MLFLOW_TRACKING_URI=http://localhost:5000 \
-           resumatrix-retraining
-```
+1. **Setup Python Environment**: Creates a virtual environment and installs dependencies
+2. **Download Data from GCS**: Downloads the latest embeddings and metadata from Google Cloud Storage
+3. **Train Model**: Trains an XGBoost model and logs metrics to MLflow
+4. **Build and Push Docker Image**: Builds a Docker image with the trained model and pushes it to Google Artifact Registry
