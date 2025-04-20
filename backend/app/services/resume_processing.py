@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import List
 from fastapi import Depends
+from app.services.database import DatabaseService
 from app.services.google_genai import GoogleGenAIService
 from app.services.pinecone import PineconeService
 from app.services.ranking import ResumeRankingService
@@ -23,7 +24,8 @@ class ResumeProcessingService:
     def __init__(self, 
                  pinecone_service: PineconeService = Depends(),
                  genai_service: GoogleGenAIService = Depends(),
-                 ranking_service: ResumeRankingService = Depends()):
+                 ranking_service: ResumeRankingService = Depends(),
+                 db_service: DatabaseService = Depends()):
 
         """
         Initialize the Resume Processing and Ranking service.
@@ -34,6 +36,7 @@ class ResumeProcessingService:
         self.pinecone_service = pinecone_service
         self.genai_service = genai_service
         self.ranking_service = ranking_service
+        self.db_service = db_service
     
 
     async def run_ranking(self, job_id, job_text, resume_list: List[Resume]):
@@ -49,6 +52,9 @@ class ResumeProcessingService:
         rsm_to_update = []
         for i in range(len(result['final_ranking'])):
             rsm_to_update.append({"id": result['final_ranking'][i], "status": i+1})
+
+        await self.db_service.update_resumes_with_job_id(job_id, rsm_to_update)
+        
         return rsm_to_update
 
 

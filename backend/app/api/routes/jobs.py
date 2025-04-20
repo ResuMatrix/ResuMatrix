@@ -155,6 +155,3 @@ async def trigger_ranking_process(
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
-
-
-
