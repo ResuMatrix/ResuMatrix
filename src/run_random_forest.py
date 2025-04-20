@@ -20,7 +20,7 @@ def execute_random_forest():
 
     # Make predictions on test data
     y_pred = model.predict(X_test)
-
+    #test
     print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}")
     print("Classification report:", classification_report(y_test, y_pred))
     print("Confusion matrix:", confusion_matrix(y_test, y_pred))
