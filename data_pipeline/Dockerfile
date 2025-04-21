@@ -53,17 +53,6 @@ RUN chown -R airflow: ${AIRFLOW_HOME}
 HEALTHCHECK --interval=30s --timeout=30s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-USER root
-RUN apt-get update && \
-    apt-get install -y apt-transport-https ca-certificates gnupg && \
-    echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] \
-      http://packages.cloud.google.com/apt cloud-sdk main" \
-      | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
-    curl https://packages.cloud.google.com/apt/doc/apt-key.gpg \
-      | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - && \
-    apt-get update && \
-    apt-get install -y google-cloud-sdk
-
 
 # Switch back to the airflow user
 USER airflow
