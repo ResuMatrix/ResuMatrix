@@ -82,3 +82,10 @@ ResuMatrix is an intelligent resume ranking platform that takes a job descriptio
 - Backend: FastAPI (external service)
 - LLM Processing: Gemini via internal API
 - Resume Ranking: Machine Learning models orchestrated via Airflow (backend service)
+
+### Screenshots of the frontend:
+
+![ResuMatrix Job Description Page](/frontend/res/resumatrix_job_description.jpeg)
+![ResuMatrix Resume Ranking Page](/frontend/res/resumatrix_resume_dashboard.jpeg)
+![ResuMatrix Feedback Page](/frontend/res/resumes_feedback.jpeg)
+
