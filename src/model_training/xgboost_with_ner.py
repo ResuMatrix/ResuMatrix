@@ -42,7 +42,7 @@ def extract_entity_overlap(df):
     # Extract entities from resumes and JDs
     df["jd_entities"] = df["job_description_text"].apply(extract_named_entities)
     df["resume_entities"] = df["resume_text"].apply(extract_named_entities)
-
+    #test
     # Compute total entity overlap
     df["entity_overlap"] = df.apply(lambda row: len(row["resume_entities"] & row["jd_entities"]), axis=1)
 
@@ -70,7 +70,7 @@ def train_xgboost_model(X_train, y_train, X_test, y_test):
     with mlflow.start_run():
 
         mlflow.set_experiment("XGBoost Model with NER")
-
+        #test
         xgb_model = XGBClassifier()
         xgb_model.fit(X_train, y_train)
 

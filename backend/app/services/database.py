@@ -62,7 +62,18 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Error fetching jobs: {str(e)}")
             raise
-
+    
+    async def update_jobs(self, jobs: List[Dict[str, Any]]) -> Optional[List[Job]]:
+        """update jobs"""
+        updated_jobs = []
+        try:
+            for job in jobs:
+                result = self.client.table("jobs").update(job).eq("id", job["id"]).execute()
+                updated_jobs.append(result.data[0])
+            return JobList.model_validate({"job_list": updated_jobs}).job_list
+        except Exception as e:
+            logger.error(f"Error updating jobs: {str(e)}")
+            raise
 
     # Resume CRUD functions
     async def create_resume(self, job_id: str, resume_text:str) -> Optional[Resume]:
