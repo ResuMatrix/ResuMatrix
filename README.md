@@ -92,6 +92,14 @@ Holds environment variables in the following way:
 
 ---
 
+## CICD Pipeline
+The CICD pipeline is set up in google cloud project using Google Cloud Run.
+Any push to the `main` branch triggers an automatic build of the frontend and backend and execution. Following a successful build, the application is accessible via a google cloud run app link.
+
+### Cloud Run Services
+![image](https://github.com/user-attachments/assets/8d9296ef-bcf2-4d60-bd63-6a8d7826ea9b)
+
+
 ## Step by Step instruction to run the product:
 
 - Run the setup.sh file:
@@ -157,12 +165,20 @@ To gracefully stop all services:
 docker compose down
 docker stop airflow && docker rm airflow
 ```
-clear
+
+## Alerts & Monitoring
+The Airflow DAG triggers email notification on a successful completion or failure of all of the pipelines. This is configured on airflow which monitors for new resume uploads, `src/run_<model>.py` file changes on GitHub.
+
+### Example email alerts
+![image](https://github.com/user-attachments/assets/2589a104-b150-4c3a-903d-0d825ca4945b)
+
+Retry Failure
+![image](https://github.com/user-attachments/assets/60039c1b-1ca3-4504-96c4-9288f690994b)
 
 
 ## Contributing
 
-Want to contribute or report issues? Feel free to open a PR or create an issue!
+Want to contribute or report issues? Please contact any of the devs.
 
 ---
 
