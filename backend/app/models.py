@@ -22,6 +22,7 @@ class Resume(BaseModel):
     status: int
     fit_probability: float
     feedback_label: int
+    section_scores: str | None
 
 class ResumeList(BaseModel):
     resume_list: List[Resume]

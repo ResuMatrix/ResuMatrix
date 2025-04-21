@@ -110,14 +110,10 @@ def login_user():
 
 # Main flow
 if st.session_state.signout:
-    top_left, top_spacer, top_right = st.columns([2, 6, 2])
+    top_left, top_spacer = st.columns([2, 6])
     with top_left:
         st.markdown(f"**Name:** {st.session_state.username}")
         st.markdown(f"**Email:** {st.session_state.useremail}")
-    with top_right:
-        st.button(' Sign Out ', on_click=lambda: st.session_state.update({
-            "signout": False, "signedout": False, "username": "", "useremail": "", "userid": ""
-        }))
 
 # Authentication Page
 if not st.session_state["signedout"]:  # Only show if the state is False
@@ -145,6 +141,12 @@ elif st.session_state.next_page == 'dashboard_page':
     st.sidebar.text(f"Date: {datetime.date.today().strftime('%B %d, %Y')}")
     if st.sidebar.button("Sign Out"):
         st.session_state.update({"signout": False, "signedout": False, "username": "", "useremail": ""})
+
+    # New direct navigation button
+    if st.sidebar.button("Go to Results"):
+        st.session_state.next_page = 'results_page'
+        st.session_state.show_results = True
+        st.rerun()
 
     if "modifications" not in st.session_state:
         st.session_state.modifications = []
@@ -331,9 +333,38 @@ elif st.session_state.next_page == 'results_page' and st.session_state.show_resu
 
     st.markdown("# **Best Resume Matches for the Job Description**")
 
-    job_id = st.session_state.job_id
     user_id = st.session_state.userid
+    job_id = st.session_state.get("job_id")
     bucket_name = GCP_BUCKET
+
+    # Always show the dropdown and update job_id on every selection
+    api_url = f"{API_BASE_URL}/jobs/?user_id={user_id}"
+    try:
+        response = requests.get(api_url)
+        if response.status_code == 200:
+            response_data = response.json()
+            job_ids = [i['id'] for i in response_data.get('jobs', [])]
+            
+            # Get current job_id or use first item as default
+            current_job_id = st.session_state.get("job_id", job_ids[0] if job_ids else None)
+            
+            # Create the selectbox with current value
+            selected_job_id = st.selectbox(
+                "Select a Job ID to view results",
+                job_ids,
+                index=job_ids.index(current_job_id) if current_job_id in job_ids else 0,
+                key="job_selector"
+            )
+            
+            # Update job_id if selection changes
+            if selected_job_id != current_job_id:
+                st.session_state.job_id = selected_job_id
+                st.rerun()  # Force refresh to load new data
+                
+            job_id = st.session_state.job_id
+
+    except Exception as e:
+        st.error(f"Failed to fetch Job IDs: {e}")
 
     job_api = f"{API_BASE_URL}/jobs/{job_id}"
     resumes_api = f"{API_BASE_URL}/jobs/{job_id}/resumes"
