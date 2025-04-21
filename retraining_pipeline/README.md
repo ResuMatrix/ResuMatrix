@@ -101,6 +101,7 @@ If you're running Jenkins locally and need to expose it to GitHub, you can use S
 The pipeline is configured with a smart filtering mechanism that only runs when:
 1. Changes are pushed to the main/master branch
 2. The changed files match specific patterns
+3. there are new files in the GCP embeddings bucket
 
 The webhook will be triggered for any push to the repository, but the pipeline will first check the branch name and then which files were changed before proceeding.
 
