@@ -384,7 +384,6 @@ elif st.session_state.next_page == 'results_page' and st.session_state.show_resu
 
             job_data = job_res.json()["job"]
             resumes_data = resumes_res.json()["resumes"]
-
             if job_data["user_id"] != user_id:
                 st.error("You are not authorized to view this job.")
                 st.stop()
@@ -441,6 +440,25 @@ elif st.session_state.next_page == 'results_page' and st.session_state.show_resu
                     mime="application/pdf",
                     key=f"download_{resume['id']}"
                 )
+
+            section_scores = resume.get('section_scores')
+            if section_scores:
+                # Convert from string to dict if necessary
+                if isinstance(section_scores, str):
+                    section_scores = json.loads(section_scores)
+                
+            # Prepare the horizontal table
+            section_names = [section.replace('_', ' ').title() for section in section_scores.keys()]
+            scores = [str(score) for score in section_scores.values()]
+            
+            table_md = "##### Section Scores\n"
+            # Header row
+            table_md += "| " + " | ".join(section_names) + " |\n"
+            # Separator row
+            table_md += "| " + " | ".join(['---'] * len(section_names)) + " |\n"
+            # Scores row
+            table_md += "| " + " | ".join(scores) + " |\n"
+            st.markdown(table_md)
 
     # Display Unfit Resumes
     st.markdown("# **Unfit Resumes**")
