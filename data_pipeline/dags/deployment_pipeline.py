@@ -333,6 +333,7 @@ def run_inference(ti, **kwargs):
 def push_results_to_supabase(ti, **kwargs):
     import requests
     embeddings_csv_blob_name = ti.xcom_pull(key="data_path", task_ids="gen_embeddings_task")
+    # form: resumes/0f54f3e0-5a58-4996-b7ed-abe08f34969c/resume_jd_data.csv
     hook = GCSHook(gcp_conn_id='google_cloud_default')
     client = hook.get_conn()
 
@@ -343,6 +344,24 @@ def push_results_to_supabase(ti, **kwargs):
 
     # Load the CSV data into a pandas DataFrame
     resume_df = pd.read_csv(io.StringIO(csv_data))
+    resume_df['predictions'] = resume_df['predictions'].astype(int)
+    resume_df['predictions'] = resume_df['predictions'].replace({0: -1, 1: 0})
+    output = []
+    for _, row in resume_df.iterrows():
+        output.append({
+            'id': row['resume_id'],
+            'status': row['predictions']
+        })
+    put_request_json = {
+        "resumes": output
+    }
+    API_BASE_URL = os.getenv("RESUMATRIX_API_URL", "localhost")
+    job_id = embeddings_csv_blob_name.split('/')[1]
+    jd_url = f"{API_BASE_URL}/jobs/{job_id}/resumes/"
+    requests.put(jd_url, json=put_request_json)
+    rank_url = f"{API_BASE_URL}/jobs/{job_id}/rank/"
+    requests.post(rank_url)
+
 
 
 # def extract_text_from_pdf():
@@ -379,8 +398,11 @@ def push_results_to_supabase(ti, **kwargs):
 with (DAG(
         'resumatrix_deployment_data_pipeline_dag',
         default_args=default_args,
-        description="A pipeline for extracting text from resumes and creating embeddings"
-        ) as dag):
+        description="A pipeline for extracting text from resumes and creating embeddings",
+        schedule_interval="@once",
+        is_paused_upon_creation=False
+)
+as dag):
 
     pull = PubSubFinalizeSensor(
         task_id='pull_gcs_events',
@@ -389,7 +411,6 @@ with (DAG(
         gcp_conn_id='google_cloud_default',  # picks up creds/env above
         max_messages=5,
         poke_interval=10,
-        timeout=300,
         mode='reschedule'
     )
 
@@ -425,6 +446,13 @@ with (DAG(
     run_inference = PythonOperator(
         task_id="run_inference_task",
         python_callable=run_inference,
+        dag=dag,
+        provide_context=True
+    )
+
+    push_results_to_supabase = PythonOperator(
+        task_id="push_results_to_supabase_task",
+        python_callable=push_results_to_supabase,
         dag=dag,
         provide_context=True
     )
@@ -509,5 +537,5 @@ with (DAG(
     )
 
     # set the task dependencies
-    pull >> handle_notification_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> run_inference >> end_task >> [email_success, email_failure]
+    pull >> handle_notification_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> run_inference >> push_results_to_supabase >> end_task >> [email_success, email_failure]
 
