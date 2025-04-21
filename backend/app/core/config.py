@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     # Pinecone
     PINECONE_API_KEY: str
+    GCP_SECRET_JSON_PATH: str
     class Config:
         env_file = ".env"
 
