@@ -3,8 +3,10 @@
 ResuMatrix is an Agentic AI-based Resume Analysis and Ranking Application. 
 
 This project is part of the coursework for IE 7374: Machine Learning Operations.
+This project is part of the coursework for IE 7374: Machine Learning Operations.
 
 ## Introduction
+
 
 Our resume-job matching pipeline is designed to automate the end-to-end process of extracting, processing, and analyzing job descriptions and resumes. Built using Apache Airflow, our pipeline orchestrates various tasks such as loading data, cleaning, preprocessing using natural language processing (NLP) techniques, and applying machine learning models to determine the suitability of a resume for a given job description.
 
