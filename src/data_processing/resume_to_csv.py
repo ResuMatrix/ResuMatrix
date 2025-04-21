@@ -38,7 +38,7 @@ def resume_pre_processing_gcs(job_id: str,
     # 3) stream into an in‑memory CSV
     output = io.StringIO()
     writer = csv.writer(output, dialect='custom')
-    writer.writerow(['resume_text'])  # header row
+    writer.writerow(['job_id', 'resume_id', 'resume_text'])  # header row
 
     for blob in blobs:
         name = blob.name.lower()
@@ -59,7 +59,8 @@ def resume_pre_processing_gcs(job_id: str,
                     result = mammoth.extract_raw_text(docx_file)
                     text = result.value
 
-            writer.writerow([text])
+            resume_id = name.split('_')[0].split('/')[2]
+            writer.writerow([job_id, resume_id, text])
 
     # 4) upload CSV back to GCS
     csv_data = output.getvalue()

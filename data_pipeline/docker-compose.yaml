@@ -75,6 +75,8 @@ x-airflow-common:
     - ../src:/opt/airflow/src
     - ${GCP_JSON_PATH}:/etc/secrets/gcp_key.json:ro
     - ./requirements.txt:/requirements.txt
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ~/.docker:/home/airflow/.docker:ro
   user: "${AIRFLOW_UID:-50000}:0"
   # Add host.docker.internal mapping for Linux hosts
   extra_hosts:
