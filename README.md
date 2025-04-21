@@ -109,7 +109,7 @@ cd ResuMatrix
 
 ```bash
 cd ResuMatrix
-docker-compose --env-file .env up --build
+docker compose --env-file .env up --build
 ```
 
 This command will:
@@ -121,7 +121,7 @@ This command will:
 
 ```bash
 cd ResuMatrix
-docker-compose up -d
+docker compose up -d
 ```
 Access the Airflow web UI at: http://localhost:8080
 
