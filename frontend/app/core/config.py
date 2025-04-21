@@ -25,6 +25,8 @@ class Settings(BaseSettings):
 
     # Backend api base url
     RESUMATRIX_API_URL: str
+    GCP_SECRET_JSON_PATH: str
+    
     class Config:
         env_file = str(Path(__file__).resolve().parent.parent.parent / ".env")
         env_file_encoding = 'utf-8'
