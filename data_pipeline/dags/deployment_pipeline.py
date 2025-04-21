@@ -286,6 +286,83 @@ def gen_embeddings(ti, **kwargs):
     # gcs_path = f"{destination_blob_name}"
     # ti.xcom_push(key="numpy_path", value=gcs_path)
 
+def run_inference(ti, **kwargs):
+    import pickle
+    import numpy as np
+    # form: resumes/0f54f3e0-5a58-4996-b7ed-abe08f34969c/resume_jd_data.csv
+    embeddings_csv_blob_name = ti.xcom_pull(key="data_path", task_ids="gen_embeddings_task")
+    model_blob_name = "model/xgboost_model_with_similarity_20250420_124918.pkl"
+
+    hook = GCSHook(gcp_conn_id='google_cloud_default')
+    client = hook.get_conn()
+
+    # 2. Reference your bucket + blob
+    bucket = client.get_bucket(BUCKET_NAME)
+    blob = bucket.blob(model_blob_name)
+
+    data_bytes = blob.download_as_bytes()  # or .download_as_string()
+    model = pickle.loads(data_bytes)
+
+    blob = bucket.blob(embeddings_csv_blob_name)
+    csv_data = blob.download_as_string().decode('utf-8')
+
+    # Load the CSV data into a pandas DataFrame
+    resume_df = pd.read_csv(io.StringIO(csv_data))
+    resume_df['resume_embeddings'] = resume_df['resume_embeddings'].apply(
+        lambda s: np.fromstring(s.strip('[]'), sep=' ').tolist())
+    resume_df['job_embeddings'] = resume_df['job_embeddings'].apply(
+        lambda s: np.fromstring(s.strip('[]'), sep=' ').tolist())
+    X = np.array([np.concatenate([r, j]) for r, j in zip(resume_df['resume_embeddings'], resume_df['job_embeddings'])])
+    preds = model.predict(X).tolist()
+    resume_df['predictions'] = preds
+
+    csv_data = resume_df.to_csv(index=False)
+
+    # Define your GCS bucket and blob name
+    destination_blob_name = f"{os.path.dirname(embeddings_csv_blob_name)}/resume_jd_data.csv"
+    log.info(f"Destination blob name: {destination_blob_name}")
+
+    blob = bucket.blob(destination_blob_name)
+    blob.upload_from_string(csv_data, content_type='text/csv')
+
+    # Construct a GCS path that can be used by downstream tasks
+    gcs_path = f"{destination_blob_name}"
+
+    ti.xcom_push(key="data_path", value=gcs_path)
+
+def push_results_to_supabase(ti, **kwargs):
+    import requests
+    embeddings_csv_blob_name = ti.xcom_pull(key="data_path", task_ids="gen_embeddings_task")
+    # form: resumes/0f54f3e0-5a58-4996-b7ed-abe08f34969c/resume_jd_data.csv
+    hook = GCSHook(gcp_conn_id='google_cloud_default')
+    client = hook.get_conn()
+
+    # 2. Reference your bucket + blob
+    bucket = client.get_bucket(BUCKET_NAME)
+    blob = bucket.blob(embeddings_csv_blob_name)
+    csv_data = blob.download_as_string().decode('utf-8')
+
+    # Load the CSV data into a pandas DataFrame
+    resume_df = pd.read_csv(io.StringIO(csv_data))
+    resume_df['predictions'] = resume_df['predictions'].astype(int)
+    resume_df['predictions'] = resume_df['predictions'].replace({0: -1, 1: 0})
+    output = []
+    for _, row in resume_df.iterrows():
+        output.append({
+            'id': row['resume_id'],
+            'status': row['predictions']
+        })
+    put_request_json = {
+        "resumes": output
+    }
+    API_BASE_URL = os.getenv("RESUMATRIX_API_URL", "localhost")
+    job_id = embeddings_csv_blob_name.split('/')[1]
+    jd_url = f"{API_BASE_URL}/jobs/{job_id}/resumes/"
+    requests.put(jd_url, json=put_request_json)
+    rank_url = f"{API_BASE_URL}/jobs/{job_id}/rank/"
+    requests.post(rank_url)
+
+
 
 # def extract_text_from_pdf():
 #     log.info("Extracting text from pdf.")
@@ -321,8 +398,11 @@ def gen_embeddings(ti, **kwargs):
 with (DAG(
         'resumatrix_deployment_data_pipeline_dag',
         default_args=default_args,
-        description="A pipeline for extracting text from resumes and creating embeddings"
-        ) as dag):
+        description="A pipeline for extracting text from resumes and creating embeddings",
+        schedule_interval="@once",
+        is_paused_upon_creation=False
+)
+as dag):
 
     pull = PubSubFinalizeSensor(
         task_id='pull_gcs_events',
@@ -331,7 +411,6 @@ with (DAG(
         gcp_conn_id='google_cloud_default',  # picks up creds/env above
         max_messages=5,
         poke_interval=10,
-        timeout=300,
         mode='reschedule'
     )
 
@@ -364,40 +443,54 @@ with (DAG(
         provide_context=True
     )
 
-    run_inference_task = DockerOperator(
-        task_id='run_inference_task',
-        image='us-east1-docker.pkg.dev/awesome-nimbus-452221-v2/resume-fit-supervised/xgboost_and_cosine_similarity:20250420_031643',
-        api_version='auto',
-        entrypoint='/bin/bash',
-        command=[
-        '-c',
-        'python /app/scripts/inference.py '
-        '--input /data/input.json '
-        '--output /data/output.json '
-        '&& sleep infinity'
-        ],
-        auto_remove='never',
-        tty=True,
-        docker_url='unix://var/run/docker.sock',
-        network_mode='bridge',
-        mounts=[
-            Mount(source="data_volume",
-                  target='/data',
-                  type='volume'),
-            Mount(source=os.environ['GCP_JSON_PATH'],
-                  target='/etc/secrets/gcp_key.json',
-                  type='bind',
-                  read_only=True),
-            # ${AIRFLOW_PROJ_DIR:-.}/scripts:/opt/airflow/scripts
-            Mount(source="scripts_volume",
-                  target="/app/scripts",
-                  type="volume")
-        ],
-        environment={"EMBEDDINGS_FILE_PATH": "{{ ti.xcom_pull(task_ids='gen_embeddings_task', key='data_path') }}/",
-                     'GOOGLE_APPLICATION_CREDENTIALS': '/etc/secrets/gcp_key.json',
-                     'GCP_PROJECT_ID': os.environ['GCP_PROJECT_ID']},
+    run_inference = PythonOperator(
+        task_id="run_inference_task",
+        python_callable=run_inference,
         dag=dag,
+        provide_context=True
     )
+
+    push_results_to_supabase = PythonOperator(
+        task_id="push_results_to_supabase_task",
+        python_callable=push_results_to_supabase,
+        dag=dag,
+        provide_context=True
+    )
+
+    # run_inference_task = DockerOperator(
+    #     task_id='run_inference_task',
+    #     image='us-east1-docker.pkg.dev/awesome-nimbus-452221-v2/resume-fit-supervised/xgboost_and_cosine_similarity:20250420_031643',
+    #     api_version='auto',
+    #     entrypoint='/bin/bash',
+    #     command=[
+    #     '-c',
+    #     'python /app/scripts/inference.py '
+    #     '--input /data/input.json '
+    #     '--output /data/output.json '
+    #     '&& sleep infinity'
+    #     ],
+    #     auto_remove='never',
+    #     tty=True,
+    #     docker_url='unix://var/run/docker.sock',
+    #     network_mode='bridge',
+    #     mounts=[
+    #         Mount(source="data_volume",
+    #               target='/data',
+    #               type='volume'),
+    #         Mount(source=os.environ['GCP_JSON_PATH'],
+    #               target='/etc/secrets/gcp_key.json',
+    #               type='bind',
+    #               read_only=True),
+    #         # ${AIRFLOW_PROJ_DIR:-.}/scripts:/opt/airflow/scripts
+    #         Mount(source="scripts_volume",
+    #               target="/app/scripts",
+    #               type="volume")
+    #     ],
+    #     environment={"EMBEDDINGS_FILE_PATH": "{{ ti.xcom_pull(task_ids='gen_embeddings_task', key='data_path') }}/",
+    #                  'GOOGLE_APPLICATION_CREDENTIALS': '/etc/secrets/gcp_key.json',
+    #                  'GCP_PROJECT_ID': os.environ['GCP_PROJECT_ID']},
+    #     dag=dag,
+    # )
 
     # embed_task = PythonOperator(
     #     task_id="embedding_generation_task",
@@ -444,5 +537,5 @@ with (DAG(
     )
 
     # set the task dependencies
-    pull >> handle_notification_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> run_inference_task >> end_task >> [email_success, email_failure]
+    pull >> handle_notification_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> run_inference >> push_results_to_supabase >> end_task >> [email_success, email_failure]
 
