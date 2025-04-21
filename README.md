@@ -155,8 +155,6 @@ To gracefully stop all services:
 docker compose down
 docker stop airflow && docker rm airflow
 ```
-clear
-
 
 ## Contributing
 
