@@ -23,8 +23,67 @@ from sklearn.metrics import accuracy_score
 # Add the project root to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Import the training function
-from src.model_training.similarity_with_xgboost import train_xgboost_model
+# Define our own training function instead of importing from src
+# This helps isolate and fix MLflow tracking issues
+from imblearn.over_sampling import SMOTE
+from xgboost import XGBClassifier
+from sklearn.metrics import classification_report, confusion_matrix
+
+def train_xgboost_model(X_train, y_train, X_test, y_test):
+    """Train XGBoost model with class balancing (SMOTE) and MLflow tracking."""
+    # Apply SMOTE for class balancing
+    smote = SMOTE()
+    X_train_balanced, y_train_balanced = smote.fit_resample(X_train, y_train)
+
+    # Train the model
+    model = XGBClassifier(use_label_encoder=False, eval_metric='logloss')
+    model.fit(X_train_balanced, y_train_balanced)
+
+    # Evaluate the model
+    y_pred = model.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+    class_report = classification_report(y_test, y_pred)
+    conf_matrix = confusion_matrix(y_test, y_pred)
+
+    # Log to MLflow
+    try:
+        # Get or create the experiment
+        mlflow_uri = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5001")
+        if mlflow_uri == "http://localhost:5001":
+            mlflow_uri = "http://127.0.0.1:5001"
+
+        # Set the tracking URI explicitly
+        mlflow.set_tracking_uri(mlflow_uri)
+        logger.info(f"Using MLflow tracking URI: {mlflow_uri}")
+
+        # Get or create experiment
+        experiment = mlflow.get_experiment_by_name("XGBoost Model with Similarity")
+        if experiment is None:
+            experiment_id = mlflow.create_experiment("XGBoost Model with Similarity")
+            logger.info(f"Created new MLflow experiment with ID: {experiment_id}")
+        else:
+            experiment_id = experiment.experiment_id
+            logger.info(f"Using existing MLflow experiment with ID: {experiment_id}")
+
+        # Start a new run with the experiment ID
+        with mlflow.start_run(experiment_id=experiment_id):
+            # Log parameters
+            mlflow.log_params(model.get_params())
+            mlflow.log_metric("accuracy", acc)
+
+            # Convert non-serializable objects to strings
+            mlflow.log_param("classification_report", str(class_report))
+            mlflow.log_param("confusion_matrix", str(conf_matrix))
+
+            # Log the model
+            mlflow.sklearn.log_model(model, "Xgboost_with_similarity_model")
+            logger.info("Successfully logged model to MLflow")
+    except Exception as e:
+        logger.warning(f"Could not log to MLflow: {str(e)}")
+        logger.warning("Continuing without MLflow tracking...")
+
+    logger.info(f"XGBoost Model with cosine similarity Accuracy: {acc:.4f}")
+    return model
 
 # Configure logging
 logging.basicConfig(
@@ -91,7 +150,7 @@ def get_best_model_metrics():
         logger.warning("Continuing without previous model metrics")
         return None
 
-def save_model(model, output_dir="model_registry"):
+def save_model(model, accuracy=None, output_dir="model_registry"):
     """Save the model to the model registry."""
     try:
         # Create output directory if it doesn't exist
@@ -104,7 +163,8 @@ def save_model(model, output_dir="model_registry"):
 
         # Create indicator file for Jenkins
         with open(os.path.join(output_dir, "new_model_saved.txt"), "w") as f:
-            f.write(f"New model saved at {model_path} with timestamp {timestamp}")
+            accuracy_info = f" with accuracy {accuracy}" if accuracy is not None else ""
+            f.write(f"New model saved at {model_path} with timestamp {timestamp}{accuracy_info}")
 
         logger.info(f"Model saved to {model_path}")
         return model_path
@@ -224,7 +284,7 @@ def main():
     logger.info(f"Loaded test embeddings with shape: {X_test.shape}")
 
     # Train the model
-    logger.info("Training XGBoost model...")
+    logger.info("Training XGBoost model with integrated MLflow tracking...")
     model = train_xgboost_model(X_train, y_train, X_test, y_test)
 
     # Get the accuracy from the latest run
@@ -274,16 +334,17 @@ def main():
     logger.info(f"New model accuracy: {new_accuracy}")
     logger.info(f"Best model accuracy: {best_accuracy}")
 
-    # Always save the model for now, since we're having issues with MLflow
-    logger.info("Saving the new model...")
-    save_model(model)
+    # Define a small threshold to account for minor fluctuations in accuracy
+    threshold = 0.005  # 0.5% threshold
 
-    # Uncomment this when MLflow is working properly
-    # if new_accuracy > best_accuracy:
-    #     logger.info("New model performs better than the best model. Saving...")
-    #     save_model(model)
-    # else:
-    #     logger.info("New model does not perform better than the best model. Not saving.")
+    # Compare the new model to the best model with threshold
+    if new_accuracy >= best_accuracy - threshold:
+        logger.info("New model performs better or similarly to the best model. Saving...")
+        save_model(model, accuracy=new_accuracy)
+    else:
+        logger.info("New model does not perform better than the best model. Not saving.")
+        # Exit without saving the model
+        exit(0)
 
 if __name__ == "__main__":
     main()
