@@ -53,6 +53,7 @@ RUN chown -R airflow: ${AIRFLOW_HOME}
 HEALTHCHECK --interval=30s --timeout=30s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
+
 # Switch back to the airflow user
 USER airflow
 WORKDIR ${AIRFLOW_HOME}

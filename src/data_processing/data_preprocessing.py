@@ -102,6 +102,8 @@ def extract_embeddings(df, data_type="train"):
     """Generate embeddings for resumes and job descriptions."""
     df['resume_embeddings'] = df['resume_text'].apply(get_embeddings)
     df['job_embeddings'] = df['job_description_text'].apply(get_embeddings)
+    if data_type == "deployment":
+        return df
     X = np.array([np.concatenate([r, j]) for r, j in zip(df['resume_embeddings'], df['job_embeddings'])])
     if data_type == "train":
         y = df['label'].values
