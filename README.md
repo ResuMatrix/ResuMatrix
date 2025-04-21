@@ -121,6 +121,7 @@ This command will:
 
 ```bash
 cd data_pipeline
+docker compose build 
 docker compose up -d
 ```
 Access the Airflow web UI at: http://localhost:8080
