@@ -86,6 +86,6 @@ ResuMatrix is an intelligent resume ranking platform that takes a job descriptio
 ### Screenshots of the frontend:
 
 ![ResuMatrix Job Description Page](/frontend/res/resumatrix_job_description.png)
-![ResuMatrix Resume Ranking Page](/frontend/res/resumatrix_resume_dashboard.png)
+![ResuMatrix Resume Ranking Page](/frontend/res/resumatrix_resumes_dashboard.png)
 ![ResuMatrix Feedback Page](/frontend/res/resumes_feedback.png)
 
