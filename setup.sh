@@ -156,33 +156,5 @@ fi
 
 cd "$CLONE_DIR"
 
-# --------- Environment Setup ---------
-echo "Setting up environment..."
 
-export GOOGLE_APPLICATION_CREDENTIALS="$CLONE_DIR/keys/gcp_credentials.json"
-
-# Load .env file if it exists
-if [ -f ".env" ]; then
-    echo "Sourcing .env file..."
-    source .env
-fi
-
-# --------- Run Docker Containers ---------
-run_service() {
-    SERVICE_NAME="$1"
-    SCRIPT_PATH="containers/run_${SERVICE_NAME}.sh"
-    if [ -f "$SCRIPT_PATH" ]; then
-        echo "Starting $SERVICE_NAME..."
-        bash "$SCRIPT_PATH"
-    else
-        echo "$SERVICE_NAME script not found, skipping."
-    fi
-}
-
-SERVICES=("airflow" "jenkins" "mlflow" "streamlit")
-
-for service in "${SERVICES[@]}"; do
-    run_service "$service"
-done
-
-echo "All services launched!"
+echo "Setup completed!"
