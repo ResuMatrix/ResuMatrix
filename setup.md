@@ -31,7 +31,6 @@ This will:
 
 - Install Docker if not already installed (Linux only). If on Windows/Mac, will have to pre-install Docker manually. 
 - Clone the ResuMatrix repository.
-- Prompt you to place the necessary .env and GCP credentials file in the project root.
 
 ## 2. Navigate to Project Directory
 

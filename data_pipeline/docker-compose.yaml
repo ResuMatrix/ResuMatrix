@@ -29,14 +29,18 @@
 x-airflow-common:
   &airflow-common
   build: .
+  env_file:
+    - ./.env
   environment:
     &airflow-common-env
     AIRFLOW_UID: ${AIRFLOW_UID:-50000}
-    AIRFLOW_GID: ${AIRFLOW_GID:-50000}
-    # Supabase credentials from .env file
-    SUPABASE_URL: ${SUPABASE_URL}
-    SUPABASE_KEY: ${SUPABASE_KEY}
-
+    AIRFLOW_GID: ${AIRFLOW_GID:-0}
+    # Explicitly set Supabase variables with defaults for safety
+    SUPABASE_URL: ${SUPABASE_URL:-}
+    SUPABASE_KEY: ${SUPABASE_API_KEY:-}
+    SUPABASE_API_KEY: ${SUPABASE_API_KEY:-}
+    # API URL for connecting to host machine
+    RESUMATRIX_API_URL: 'http://host.docker.internal:8000/api'
     # GCP-related environment variables
     AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: 'google-cloud-platform://?extra__google_cloud_platform__key_path=/etc/secrets/gcp_key.json'
     GCP_PROJECT_ID: ${GCP_PROJECT_ID}
@@ -60,18 +64,21 @@ x-airflow-common:
     AIRFLOW__SMTP__SMTP_PASSWORD: 'mrrb ubti ldnz hrve'
     AIRFLOW__SMTP__SMTP_PORT: '587'
     AIRFLOW__SMTP__SMTP_MAIL_FROM: 'mlops.team20@gmail.com'
+  # env_file already specified above
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
-    - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
+    - logs-volume:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
     - ${AIRFLOW_PROJ_DIR:-.}/scripts:/opt/airflow/scripts
     - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
     - ../src:/opt/airflow/src
-    # Comment out the GCP key path for now - you'll need to provide the correct path on your Mac
-    - ./awesome-nimbus-452221-v2-7082cef23cbe.json:/etc/secrets/gcp_key.json:ro
+    - ${GCP_JSON_PATH}:/etc/secrets/gcp_key.json:ro
     - ./requirements.txt:/requirements.txt
   user: "${AIRFLOW_UID:-50000}:0"
+  # Add host.docker.internal mapping for Linux hosts
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   # Default entrypoint will be used
   depends_on:
     &airflow-common-depends-on
@@ -108,6 +115,11 @@ services:
           --role Admin \
           --email admin@example.com \
           --password ${_AIRFLOW_WWW_USER_PASSWORD:-admin}
+
+        # Fix permissions for logs directory
+        mkdir -p /opt/airflow/logs
+        chmod -R 777 /opt/airflow/logs
+        chown -R ${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0} /opt/airflow/logs
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_UPGRADE: 'true'
@@ -120,7 +132,7 @@ services:
     <<: *airflow-common
     command: airflow webserver
     ports:
-      - "8080:8080"
+      - "8085:8080"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
       interval: 30s
@@ -165,3 +177,4 @@ services:
 
 volumes:
   postgres-db-volume:
+  logs-volume:

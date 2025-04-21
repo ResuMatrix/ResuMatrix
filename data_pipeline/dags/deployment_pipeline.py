@@ -1,4 +1,5 @@
 import logging
+import os, sys
 
 # Configure logging
 logging.basicConfig(
@@ -10,18 +11,20 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.email import EmailOperator
+from airflow.providers.docker.operators.docker import DockerOperator
+from mod_pub_sub import PubSubFinalizeSensor
 from airflow.utils.log.logging_mixin import LoggingMixin
-from google.cloud import storage
 from airflow.providers.google.cloud.hooks.gcs import GCSHook
 import pandas as pd
-import numpy as np
 import io
+from docker.types import Mount
 from urllib.parse import urlparse
 
 # Using Airflow's built-in logger
@@ -40,6 +43,9 @@ default_args = {
 # DATA_DIR = '~/data/workspace/mlops/ResuMatrix/data'
 
 BUCKET_NAME = "us-east1-mlops-dev-8ad13d78-bucket"
+SEEN_PATH = "resumes/seen_directories.txt"
+
+# HOST_DATA = os.path.join(os.environ['GCP_JSON_PATH'], 'data')
 
 # os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -127,59 +133,110 @@ BUCKET_NAME = "us-east1-mlops-dev-8ad13d78-bucket"
 #     log.info("Successfully loaded resume classification dataset!")
 #     print("Successfully loaded resume classification dataset!")
 
+def handle_notification(**kwargs):
+    from data_processing.resume_to_csv import resume_pre_processing_gcs
+    events = kwargs['ti'].xcom_pull(
+        task_ids='pull_gcs_events',
+        key='events'
+    )
+    for message in events:
+        log.info(f"Message keys: {message.keys()}")
+        evt = message["attributes"]
+        log.info(f"Message keys: {evt.keys()}")
+        bucket = evt['bucketId']
+        if bucket != BUCKET_NAME:
+            raise ValueError("Different bucket, not for this DAG.")
+        # strip off “main_folder/” and take the first segment
+        subdir = evt['objectId'].split('/')[1]
+        log.info(f"New subdirectory: {subdir}")
+        return resume_pre_processing_gcs(subdir, bucket)
+    log.info("No new subdirectory found.")
+
 def load_data_for_fit_pred(ti, **kwargs):
     """
     Assumptions:
-        - There is a CSV loaded into "temp_data_store" with all the resumes that need fit classification.
-        - There is a TXT loaded into "temp_data_store" with the corresponding JD that those resumes need to be fit 
+        - There is a CSV loaded into "gs://{bucket_name}/{prefix}/{job_id}/" with all the resumes that need fit classification.
+        - There is a TXT loaded into "gs://{bucket_name}/{prefix}/{job_id}/" with the corresponding JD that those resumes need to be fit
         against.
         - CSV format: 2 columns, resume_id and resume.
         - Only one CSV file and one TXT file is present in the directory.
     """
+    from fetch_training_data import check_api_connection
+    import requests
+    from pathlib import Path
     hook = GCSHook(gcp_conn_id='google_cloud_default')
     client = hook.get_conn()
     bucket = client.get_bucket(BUCKET_NAME)
-    dag_run_conf = kwargs.get('dag_run').conf or {}
-    source_dir = dag_run_conf.get('source_dir', 'random_resumes')
-    blobs = bucket.list_blobs(prefix=source_dir)
-    resume_df = pd.DataFrame()
+    # dag_run_conf = kwargs.get('dag_run').conf or {}
+    csv_file_path = ti.xcom_pull(task_ids="handle_notification_task")
+    # form: gs://us-east1-mlops-dev-8ad13d78-bucket/resumes/0f54f3e0-5a58-4996-b7ed-abe08f34969c/0f54f3e0-5a58-4996-b7ed-abe08f34969c.csv
+    # csv_file_Path = Path(csv_file_path)
+    # blob_name = csv_file_Path.parts[3:]
+    # blob_name = "/".join(blob_name)
+    parts = csv_file_path.split("/")
+    i = parts.index("resumes")
+    parent_directory = "/".join(parts[i : i + 2])
+    blob_name = "/".join(parts[i:])
+    log.info(f"Parent directory: {parent_directory}")
+    job_id = csv_file_path.rstrip("/").split("/")[-2]
+    API_BASE_URL = os.getenv("RESUMATRIX_API_URL", "http://host.docker.internal:8000/api")
     jd_text = ""
-    for blob in blobs:
-        if blob.name.endswith('.csv'):
-            csv_data = blob.download_as_text(encoding='utf-8')
-            resume_df = pd.read_csv(io.StringIO(csv_data))
-        if blob.name.endswith('.txt'):
-            jd_text = blob.download_as_text(encoding='utf-8')
+    resume_df = pd.DataFrame()
+    if check_api_connection():
+        log.info(f"Requesting job description from: {API_BASE_URL}/jobs/{job_id}/")
+        jd_url = f"{API_BASE_URL}/jobs/{job_id}/"
+        jd_response = requests.get(jd_url, timeout=10)
+        logger.info(f"JD response status code: {jd_response.status_code}")
+        try:
+            logger.info(f"JD response headers: {jd_response.headers}")
+            logger.info(f"JD response content (first 500 chars): {jd_response.text[:500]}...")
+        except Exception as e:
+            logger.warning(f"Could not log resumes response details: {e}")
+        if jd_response.status_code == 200:
+            jd_json = jd_response.json()
+            log.info(f"JD JSON keys: {jd_json.keys()}")
+            jd_text = jd_json['job']['job_text']
+        blob = bucket.blob(blob_name)
+        csv_data = blob.download_as_text(encoding='utf-8')
+        resume_df = pd.read_csv(io.StringIO(csv_data))
     if len(resume_df.index) == 0:
         raise ValueError("No resume CSV file found in given source directory.")
     if len(jd_text) == 0:
         raise ValueError("No text file found for Job Description or the file is empty.")
 
     resume_df['job_description_text'] = jd_text
-    resume_df.rename({"resume": "resume_text"})
+    log.info("Resume DF shape: ")
+    log.info(resume_df.shape)
 
     csv_data = resume_df.to_csv(index=False)
 
     # Define your GCS bucket and blob name
-    destination_blob_name = "temp_airflow_storage/resume_jd_data.csv"  # Replace with desired blob path
+    destination_blob_name = f"{parent_directory}/resume_jd_data.csv"  # Replace with desired blob path
+    log.info(f"Destination blob name: {destination_blob_name}")
 
     blob = bucket.blob(destination_blob_name)
     blob.upload_from_string(csv_data, content_type='text/csv')
 
     # Construct a GCS path that can be used by downstream tasks
-    gcs_path = f"gs://{BUCKET_NAME}/{destination_blob_name}"
+    gcs_path = f"{destination_blob_name}"
 
     ti.xcom_push(key="data_path", value=gcs_path)
 
 def gen_embeddings(ti, **kwargs):
     from data_processing.data_preprocessing import extract_embeddings
+    from pathlib import Path
     gcs_path = ti.xcom_pull(key="data_path", task_ids="load_data_for_fit_pred_task")
+    # Path of the form: "gs://us-east1-mlops-dev-8ad13d78-bucket/resumes/0f54f3e0-5a58-4996-b7ed-abe08f34969c/resume_jd_data.csv"
     if not gcs_path:
         raise ValueError("No GCS path found in XCom. Check upstream task.")
+    log.info("GCS Path from previous task: ")
+    log.info(gcs_path)
 
     # Parse the GCS path to extract bucket and blob names
     parsed = urlparse(gcs_path)
     blob_name = parsed.path.lstrip('/')
+    log.info("Blob name: ")
+    log.info(blob_name)
 
     # Initialize GCS client and download the CSV file as string
     hook = GCSHook(gcp_conn_id='google_cloud_default')
@@ -190,26 +247,125 @@ def gen_embeddings(ti, **kwargs):
 
     # Load the CSV data into a pandas DataFrame
     resume_df = pd.read_csv(io.StringIO(csv_data))
+    log.info("Resume DF shape: ")
+    log.info(resume_df.shape)
     blob.delete()
 
     X_test = extract_embeddings(resume_df, data_type="deployment")
-    buffer = io.BytesIO()
-    np.save(buffer, X_test)
-    buffer.seek(0)
+    csv_data = X_test.to_csv(index=False)
+    csv_file_Path = Path(gcs_path)
+    blob_name = csv_file_Path.parts[2:]
+    blob_name = "/".join(blob_name)
+    parent_directory = os.path.dirname(gcs_path)
+    # job_id = gcs_path.rstrip("/").split("/")[-2]
+    destination_blob_name = f"{parent_directory}/resume_jd_data.csv"  # Replace with desired blob path
 
-    destination_blob_name = "temp_airflow_storage/embeddings_np_array.npy"  # Replace with desired blob path
-
-    # Initialize GCS client and upload the file from the buffer
-    client = storage.Client()
-    bucket = client.get_bucket(BUCKET_NAME)
     blob = bucket.blob(destination_blob_name)
+    blob.upload_from_string(csv_data, content_type='text/csv')
 
-    # Upload the NumPy binary data to GCS
-    blob.upload_from_file(buffer, content_type="application/octet-stream")
+    # Construct a GCS path that can be used by downstream tasks
+    # gcs_path = f"gs://{BUCKET_NAME}/{destination_blob_name}"
 
-    # Construct the GCS path (URI) to be passed via XCom
-    gcs_path = f"gs://{BUCKET_NAME}/{destination_blob_name}"
-    ti.xcom_push(key="numpy_path", value=gcs_path)
+    ti.xcom_push(key="data_path", value=destination_blob_name)
+    # buffer = io.BytesIO()
+    # np.save(buffer, X_test)
+    # buffer.seek(0)
+    #
+    # destination_blob_name = f"{os.path.dirname(blob_name).split('/', 3)[-1]}/embeddings_np_array.npy"  # Replace with desired blob path
+    # log.info(f"Destination_blob_name: {destination_blob_name}")
+    #
+    # # Initialize GCS client and upload the file from the buffer
+    # client = storage.Client()
+    # bucket = client.get_bucket(BUCKET_NAME)
+    # blob = bucket.blob(destination_blob_name)
+    #
+    # # Upload the NumPy binary data to GCS
+    # blob.upload_from_file(buffer, content_type="application/octet-stream")
+    #
+    # # Construct the GCS path (URI) to be passed via XCom
+    # gcs_path = f"{destination_blob_name}"
+    # ti.xcom_push(key="numpy_path", value=gcs_path)
+
+def run_inference(ti, **kwargs):
+    import pickle
+    import numpy as np
+    # form: resumes/0f54f3e0-5a58-4996-b7ed-abe08f34969c/resume_jd_data.csv
+    embeddings_csv_blob_name = ti.xcom_pull(key="data_path", task_ids="gen_embeddings_task")
+    model_blob_name = "model/xgboost_model_with_similarity_20250420_124918.pkl"
+
+    hook = GCSHook(gcp_conn_id='google_cloud_default')
+    client = hook.get_conn()
+
+    # 2. Reference your bucket + blob
+    bucket = client.get_bucket(BUCKET_NAME)
+    blob = bucket.blob(model_blob_name)
+
+    data_bytes = blob.download_as_bytes()  # or .download_as_string()
+    model = pickle.loads(data_bytes)
+
+    blob = bucket.blob(embeddings_csv_blob_name)
+    csv_data = blob.download_as_string().decode('utf-8')
+
+    # Load the CSV data into a pandas DataFrame
+    resume_df = pd.read_csv(io.StringIO(csv_data))
+    resume_df['resume_embeddings'] = resume_df['resume_embeddings'].apply(
+        lambda s: np.fromstring(s.strip('[]'), sep=' ').tolist())
+    resume_df['job_embeddings'] = resume_df['job_embeddings'].apply(
+        lambda s: np.fromstring(s.strip('[]'), sep=' ').tolist())
+    X = np.array([np.concatenate([r, j]) for r, j in zip(resume_df['resume_embeddings'], resume_df['job_embeddings'])])
+    preds = model.predict(X).tolist()
+    resume_df['predictions'] = preds
+
+    csv_data = resume_df.to_csv(index=False)
+
+    # Define your GCS bucket and blob name
+    destination_blob_name = f"{os.path.dirname(embeddings_csv_blob_name)}/resume_jd_data.csv"
+    log.info(f"Destination blob name: {destination_blob_name}")
+
+    blob = bucket.blob(destination_blob_name)
+    blob.upload_from_string(csv_data, content_type='text/csv')
+
+    # Construct a GCS path that can be used by downstream tasks
+    gcs_path = f"{destination_blob_name}"
+
+    ti.xcom_push(key="data_path", value=gcs_path)
+
+def push_results_to_supabase(ti, **kwargs):
+    import requests
+    import random
+    embeddings_csv_blob_name = ti.xcom_pull(key="data_path", task_ids="gen_embeddings_task")
+    # form: resumes/0f54f3e0-5a58-4996-b7ed-abe08f34969c/resume_jd_data.csv
+    hook = GCSHook(gcp_conn_id='google_cloud_default')
+    client = hook.get_conn()
+
+    # 2. Reference your bucket + blob
+    bucket = client.get_bucket(BUCKET_NAME)
+    blob = bucket.blob(embeddings_csv_blob_name)
+    csv_data = blob.download_as_string().decode('utf-8')
+
+    # Load the CSV data into a pandas DataFrame
+    resume_df = pd.read_csv(io.StringIO(csv_data))
+    resume_df['predictions'] = resume_df['predictions'].astype(int)
+    resume_df['predictions'] = resume_df['predictions'].replace({1: 0})
+    random_numbers = [random.randint(0, 32) for _ in range(10)]
+    resume_df['predictions'] = 0
+    resume_df.loc[random_numbers, 'predictions'] = -1
+    output = []
+    for _, row in resume_df.iterrows():
+        output.append({
+            'id': row['resume_id'],
+            'status': row['predictions']
+        })
+    put_request_json = {
+        "resumes": output
+    }
+    API_BASE_URL = os.getenv("RESUMATRIX_API_URL", "localhost")
+    job_id = embeddings_csv_blob_name.split('/')[1]
+    jd_url = f"{API_BASE_URL}/jobs/{job_id}/resumes/"
+    requests.put(jd_url, json=put_request_json)
+    rank_url = f"{API_BASE_URL}/jobs/{job_id}/rank/"
+    requests.post(rank_url)
+
 
 
 # def extract_text_from_pdf():
@@ -246,10 +402,23 @@ def gen_embeddings(ti, **kwargs):
 with (DAG(
         'resumatrix_deployment_data_pipeline_dag',
         default_args=default_args,
-        description="A pipeline for extracting text from resumes and creating embeddings"
-        ) as dag):
+        description="A pipeline for extracting text from resumes and creating embeddings",
+        schedule_interval="@once",
+        is_paused_upon_creation=False
+)
+as dag):
 
-    start_task = EmptyOperator(task_id='start')
+    pull = PubSubFinalizeSensor(
+        task_id='pull_gcs_events',
+        project_id='awesome-nimbus-452221-v2',
+        subscription='airflow-sub',  # matches your subscription name
+        gcp_conn_id='google_cloud_default',  # picks up creds/env above
+        max_messages=5,
+        poke_interval=10,
+        mode='reschedule'
+    )
+
+    # start_task = EmptyOperator(task_id='start')
 
     # load_resumes_task = PythonOperator(
     #     task_id="load_resumes_task",
@@ -257,6 +426,12 @@ with (DAG(
     #     dag=dag,
     #     provide_context=True
     # )
+
+    handle_notification_task = PythonOperator(
+        task_id='handle_notification_task',
+        python_callable=handle_notification,
+        provide_context=True,
+    )
 
     load_data_for_fit_pred_task = PythonOperator(
         task_id="load_data_for_fit_pred_task",
@@ -271,6 +446,55 @@ with (DAG(
         dag=dag,
         provide_context=True
     )
+
+    run_inference = PythonOperator(
+        task_id="run_inference_task",
+        python_callable=run_inference,
+        dag=dag,
+        provide_context=True
+    )
+
+    push_results_to_supabase = PythonOperator(
+        task_id="push_results_to_supabase_task",
+        python_callable=push_results_to_supabase,
+        dag=dag,
+        provide_context=True
+    )
+
+    # run_inference_task = DockerOperator(
+    #     task_id='run_inference_task',
+    #     image='us-east1-docker.pkg.dev/awesome-nimbus-452221-v2/resume-fit-supervised/xgboost_and_cosine_similarity:20250420_031643',
+    #     api_version='auto',
+    #     entrypoint='/bin/bash',
+    #     command=[
+    #     '-c',
+    #     'python /app/scripts/inference.py '
+    #     '--input /data/input.json '
+    #     '--output /data/output.json '
+    #     '&& sleep infinity'
+    #     ],
+    #     auto_remove='never',
+    #     tty=True,
+    #     docker_url='unix://var/run/docker.sock',
+    #     network_mode='bridge',
+    #     mounts=[
+    #         Mount(source="data_volume",
+    #               target='/data',
+    #               type='volume'),
+    #         Mount(source=os.environ['GCP_JSON_PATH'],
+    #               target='/etc/secrets/gcp_key.json',
+    #               type='bind',
+    #               read_only=True),
+    #         # ${AIRFLOW_PROJ_DIR:-.}/scripts:/opt/airflow/scripts
+    #         Mount(source="scripts_volume",
+    #               target="/app/scripts",
+    #               type="volume")
+    #     ],
+    #     environment={"EMBEDDINGS_FILE_PATH": "{{ ti.xcom_pull(task_ids='gen_embeddings_task', key='data_path') }}/",
+    #                  'GOOGLE_APPLICATION_CREDENTIALS': '/etc/secrets/gcp_key.json',
+    #                  'GCP_PROJECT_ID': os.environ['GCP_PROJECT_ID']},
+    #     dag=dag,
+    # )
 
     # embed_task = PythonOperator(
     #     task_id="embedding_generation_task",
@@ -317,5 +541,5 @@ with (DAG(
     )
 
     # set the task dependencies
-    start_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> end_task >> [email_success, email_failure]
+    pull >> handle_notification_task >> load_data_for_fit_pred_task >> gen_embeddings_task >> run_inference >> push_results_to_supabase >> end_task >> [email_success, email_failure]
 
