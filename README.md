@@ -120,7 +120,7 @@ This command will:
 - Then we start the docker container to start Airflow to view the deployment and retraining dags:
 
 ```bash
-cd ResuMatrix
+cd data_pipeline
 docker compose up -d
 ```
 Access the Airflow web UI at: http://localhost:8080
